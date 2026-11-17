@@ -4,7 +4,7 @@ import { open, realpath } from "node:fs/promises";
 import { basename, isAbsolute, resolve, sep } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
-import { APP_ID, bindHosts, port, token } from "./config.ts";
+import { APP_ID, bindHosts, debug, isTailscaleAddr, port, tailnetAuthEnabled, tailnetUsers, tailscaleOwner, tailscaleWhois, token } from "./config.ts";
 import type { ControlCommand, HubState, SessionEvent, SessionMeta, ToolState, WireMessage } from "./protocol.ts";
 
 export const VERSION = "0.1.0";
@@ -19,6 +19,7 @@ const MAX_FILE_VIEW = 1024 * 1024;
 // Never serve these through the file viewer, even inside the project.
 const SECRET_FILE = /(^|\/)(\.env(\..*)?|\.netrc|\.npmrc|\.pypirc|id_[a-z0-9]+|.*\.(pem|key|p12|pfx|kdbx|age)|credentials(\.json)?|secrets?(\.[a-z]+)?)$/i;
 const BROWSER_BACKLOG_LIMIT = 8 * 1024 * 1024;
+const WHOIS_TTL_MS = 60_000;
 
 /** Messages the hub pushes down to a publisher process. */
 export type OwnerMessage = { type: "command"; command: ControlCommand };
@@ -107,6 +108,8 @@ export class Hub {
   readonly publicHost?: string;
   readonly warning?: string;
   private readonly secret = token();
+  /** Tailnet peer address -> verdict, so whois runs about once a minute per device. */
+  private whoisCache = new Map<string, { ok: boolean; at: number }>();
 
   private constructor() {
     const b = bindHosts();
@@ -390,6 +393,26 @@ export class Hub {
     return false;
   }
 
+  /**
+   * Token-free entry for a trusted tailnet user. Only for connections that came in on the
+   * Tailscale address from a Tailscale peer; tailscaled says who the peer is. Trusted: the
+   * logins in PI_WEBSESSION_TS_USERS, else this node's owner. Tagged devices never are.
+   */
+  private async tailnetAuthed(req: IncomingMessage): Promise<boolean> {
+    if (!tailnetAuthEnabled()) return false;
+    const remote = req.socket.remoteAddress;
+    if (!isTailscaleAddr(remote) || !isTailscaleAddr(req.socket.localAddress)) return false;
+    const hit = this.whoisCache.get(remote!);
+    if (hit && Date.now() - hit.at < WHOIS_TTL_MS) return hit.ok;
+    const [peer, owner] = await Promise.all([tailscaleWhois(remote!), tailscaleOwner()]);
+    const allowed = tailnetUsers() ?? (owner ? [owner] : []);
+    const ok = !!peer?.login && allowed.includes(peer.login);
+    debug("tailnet auth", remote, peer?.node, peer?.login ?? "(tagged/unknown)", ok ? "allowed" : "denied");
+    if (this.whoisCache.size > 256) this.whoisCache.clear();
+    this.whoisCache.set(remote!, { ok, at: Date.now() });
+    return ok;
+  }
+
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? "/", "http://x");
     const path = url.pathname;
@@ -401,7 +424,7 @@ export class Hub {
       return;
     }
 
-    const auth = this.authed(req, url);
+    const auth = this.authed(req, url) || ((await this.tailnetAuthed(req)) ? "ok" : false);
     if (auth === "query") {
       res.writeHead(302, {
         "set-cookie": `piws_t=${encodeURIComponent(this.secret)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000`,

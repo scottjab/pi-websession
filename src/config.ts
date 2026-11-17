@@ -129,6 +129,70 @@ export function tailscaleDnsName(): Promise<string | undefined> {
   return dnsNameCache;
 }
 
+// ---------- Tailscale identity ----------
+
+/** True for a Tailscale IPv4 (100.64.0.0/10), also in its IPv4-mapped IPv6 form. */
+export function isTailscaleAddr(addr: string | undefined): boolean {
+  if (!addr) return false;
+  const v4 = addr.startsWith("::ffff:") ? addr.slice(7) : addr;
+  const parts = v4.split(".").map(Number);
+  return parts.length === 4 && parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+}
+
+/** Off with PI_WEBSESSION_TS_AUTH=off: then only the token gets you in. */
+export function tailnetAuthEnabled(): boolean {
+  return !/^(0|off|false|no)$/i.test(process.env.PI_WEBSESSION_TS_AUTH ?? "");
+}
+
+/** PI_WEBSESSION_TS_USERS: comma list of tailnet login names to let in. Unset: this node's owner. */
+export function tailnetUsers(): string[] | undefined {
+  const v = process.env.PI_WEBSESSION_TS_USERS;
+  if (!v?.trim()) return undefined;
+  return v.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
+/** `tailscale <cmd> --json [args]`. Flags go before positional args: Go's flag parser stops at the first one. */
+function tailscaleJson(cmd: string, args: string[] = []): Promise<any> {
+  return new Promise((resolve) => {
+    execFile("tailscale", [cmd, "--json", ...args], { timeout: 3000 }, (err, stdout) => {
+      if (err) return resolve(undefined);
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        resolve(undefined);
+      }
+    });
+  });
+}
+
+let ownerCache: Promise<string | undefined> | undefined;
+/** Login name of the user owning this node. Undefined for a tagged node (owned by its tags, not a person). */
+export function tailscaleOwner(): Promise<string | undefined> {
+  ownerCache ??= tailscaleJson("status", ["--self"]).then((st) => {
+    const self = st?.Self;
+    if (!self || self.Tags?.length) return undefined;
+    const login = st.User?.[String(self.UserID)]?.LoginName;
+    return typeof login === "string" ? login.toLowerCase() : undefined;
+  });
+  return ownerCache;
+}
+
+export interface TailnetPeer {
+  /** Login name, undefined for tagged devices. */
+  login?: string;
+  node?: string;
+}
+
+/** Who is behind a tailnet address, per the local tailscaled. Undefined if it doesn't know the address. */
+export async function tailscaleWhois(addr: string): Promise<TailnetPeer | undefined> {
+  const ip = addr.startsWith("::ffff:") ? addr.slice(7) : addr;
+  const w = await tailscaleJson("whois", [ip]);
+  if (!w?.Node) return undefined;
+  const tagged = !!w.Node.Tags?.length;
+  const login = !tagged && typeof w.UserProfile?.LoginName === "string" ? w.UserProfile.LoginName.toLowerCase() : undefined;
+  return { login, node: typeof w.Node.Name === "string" ? w.Node.Name.replace(/\.$/, "") : undefined };
+}
+
 const TOKEN_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"; // no l/o/0/1, easy to type on a phone
 
 /** Shared secret for browsers and publishers. Persisted so phone bookmarks keep working. */

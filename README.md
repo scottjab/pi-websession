@@ -44,6 +44,7 @@ The opt-in is remembered per session file, so a resumed session comes back share
 - **Subagents.** When a session is shared, the extension registers itself with pi-subagents (`registerRequiredChildExtensions`), so child sessions load it too. A child publishes when its `parentSession` chain leads to a shared session. Finished subagents stay listed as "done" for 30 minutes, or until their parent goes away.
 - **Consent** lives in `~/.pi/agent/websession/shared-sessions.json`. Publishers re-read it every few seconds and again right before acting on any web command, so `/web nocontrol` and `/web off` take effect right away.
 - **Auth.** A random token in `~/.pi/agent/websession/token` (mode 600), checked with a constant-time compare. It's sent as an HttpOnly SameSite=Strict cookie. Control POSTs also need a custom header, which blocks cross-site form posts.
+- **Tailnet users skip the token.** A request that comes in on the Tailscale address from a tailnet peer is checked with `tailscale whois`. If the peer's user is trusted, it's let in with no token: by default that's the user who owns this machine on the tailnet, or the logins in `PI_WEBSESSION_TS_USERS`. Tagged devices are never trusted this way. A tagged host (no owner) needs `PI_WEBSESSION_TS_USERS`. LAN and loopback still need the token.
 - Big payloads are trimmed: text over 60k chars, tool args over 30k. Images are sent to the hub once and messages only carry a hash. Streaming text goes as deltas, throttled to about 8 updates a second.
 
 ## Config (env vars)
@@ -53,6 +54,8 @@ The opt-in is remembered per session file, so a resumed session comes back share
 | `PI_WEBSESSION_PORT` | `7878` | |
 | `PI_WEBSESSION_HOST` | `tailscale,lan` | comma list of `tailscale` (100.64/10 address), `lan` (private IPv4s on physical interfaces), `local` (loopback only), `all` (0.0.0.0), or IPs. Loopback is always on |
 | `PI_WEBSESSION_TOKEN` | generated | fixed token instead of the token file |
+| `PI_WEBSESSION_TS_AUTH` | on | `off` turns off token-free access for trusted tailnet users |
+| `PI_WEBSESSION_TS_USERS` | this node's owner | comma list of tailnet login names let in without the token |
 | `PI_WEBSESSION_DIR` | `~/.pi/agent/websession` | state dir |
 | `PI_WEBSESSION_SUBAGENTS_PATH` | auto | pi-subagents package dir, if it isn't found from settings |
 | `PI_WEBSESSION_DEBUG` | off | log to `<dir>/debug.log` |
