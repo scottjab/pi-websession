@@ -11,13 +11,13 @@ Watch a running pi session, and its subagents, live from your phone or a browser
 ## Install
 
 ```sh
-pi install /home/scottjab/code/js/pi-websession
+pi install git:github.com/scottjab/pi-websession
 ```
 
-or add the path to `extensions` in `~/.pi/agent/settings.json` (or your home-manager config). Try it once without installing:
+or clone it and add the path to `extensions` in `~/.pi/agent/settings.json`. Try it once without installing:
 
 ```sh
-pi -e /home/scottjab/code/js/pi-websession/src/index.ts
+pi -e ./pi-websession/src/index.ts
 ```
 
 ## Use
@@ -70,4 +70,4 @@ The opt-in is remembered per session file, so a resumed session comes back share
 
 ## Dev
 
-`npm run typecheck`. `tsconfig.json` points at the pi install in the nix store for types, so update the path when pi upgrades.
+`npm install && npm run typecheck`. Types come from the `@earendil-works/pi-coding-agent` dev dependency.

@@ -1,7 +1,7 @@
 {
   "name": "pi-websession",
   "version": "0.1.0",
-  "description": "Watch (and optionally drive) running pi sessions and their subagents from a browser over Tailscale",
+  "description": "Watch (and optionally drive) running pi sessions and their subagents from a browser over Tailscale or your LAN",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -11,7 +11,9 @@
     "extension"
   ],
   "files": [
-    "src"
+    "src",
+    "README.md",
+    "LICENSE"
   ],
   "pi": {
     "extensions": [
@@ -20,5 +22,17 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scottjab/pi-websession.git"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.5.2",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
   }
 }
