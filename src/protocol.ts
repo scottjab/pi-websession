@@ -35,11 +35,24 @@ export interface SessionMeta {
 /** A message as shown in the UI (pi AgentMessage, trimmed for transport). */
 export type WireMessage = Record<string, any> & { role: string; timestamp?: number };
 
+/** One tool call a codemode script made (pi's `details.calls` on the codemode result). */
+export interface CodeCall {
+  name: string;
+  /** JSON preview of the arguments, already shortened by pi. */
+  args?: string;
+  status: "running" | "ok" | "error" | "cancelled";
+  durationMs?: number;
+  cost?: number;
+  error?: string;
+}
+
 export interface ToolState {
   toolCallId: string;
   toolName: string;
   status: "running" | "done" | "error";
   partial?: string;
+  /** codemode: the script's nested calls so far. */
+  calls?: CodeCall[];
   startedAt: number;
   durationMs?: number;
 }

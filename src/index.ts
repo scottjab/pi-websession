@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { agentDir, bindHosts, debug, findSharedRoot, port, readSessionHeader, readShares, removeShare, rotateToken, setShare, tailscaleDnsName, token } from "./config.ts";
 import { processNode } from "./node.ts";
 import type { ControlCommand, SessionEvent, SessionMeta, ToolState, WireMessage } from "./protocol.ts";
-import { partialToolText, toWire } from "./serialize.ts";
+import { codeCalls, partialToolText, toWire } from "./serialize.ts";
 
 const STATUS_KEY = "websession";
 const CONSENT_POLL_MS = 4000;
@@ -356,6 +356,8 @@ class Publisher {
     const t = this.tools.get(e.toolCallId);
     if (!t) return;
     t.partial = partialToolText(e.partialResult);
+    const calls = codeCalls(e.partialResult?.details);
+    if (calls) t.calls = calls;
     if (this.toolTimers.has(t.toolCallId)) return;
     this.toolTimers.set(
       t.toolCallId,
@@ -373,6 +375,7 @@ class Publisher {
     t.status = e.isError ? "error" : "done";
     t.durationMs = e.durationMs ?? Date.now() - t.startedAt;
     t.partial = undefined;
+    t.calls = undefined; // the tool result carries the final list
     this.emit({ type: "tool", sessionId: this.id, tool: { ...t } });
     this.tools.delete(t.toolCallId);
   }
@@ -556,14 +559,17 @@ export default function websession(pi: ExtensionAPI) {
   });
   pi.on("tool_execution_start", async (e, ctx) => {
     touch(ctx);
+    if ((e as any).parentToolCallId) return; // nested (codemode): listed in the parent's details.calls
     pub?.toolStart(e);
   });
   pi.on("tool_execution_update", async (e, ctx) => {
     touch(ctx);
+    if ((e as any).parentToolCallId) return; // nested (codemode): listed in the parent's details.calls
     pub?.toolUpdate(e);
   });
   pi.on("tool_execution_end", async (e, ctx) => {
     touch(ctx);
+    if ((e as any).parentToolCallId) return; // nested (codemode): listed in the parent's details.calls
     pub?.toolEnd(e);
   });
   pi.on("model_select", async (e: any, ctx) => {

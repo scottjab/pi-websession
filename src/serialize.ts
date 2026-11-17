@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { WireMessage } from "./protocol.ts";
+import type { CodeCall, WireMessage } from "./protocol.ts";
 
 /** Receives image bytes pulled out of messages, so messages only carry a ref. */
 export type ImageSink = (ref: string, mimeType: string, data: string) => void;
@@ -9,6 +9,8 @@ const MAX_ARGS = 30_000;
 const MAX_PARTIAL_TOOL_OUTPUT = 8_000;
 const MAX_DIFF = 40_000;
 const MAX_IMAGE_B64 = 4 * 1024 * 1024;
+const MAX_CODE_CALLS = 256;
+const MAX_CODE_CALL_ARGS = 2_000;
 
 function clip(s: string, max = MAX_TEXT): string {
   if (typeof s !== "string") return s;
@@ -85,6 +87,7 @@ export function toWire(m: any, sink?: ImageSink): WireMessage | undefined {
         durationMs: typeof m.durationMs === "number" ? m.durationMs : undefined,
         // pi's edit tool computes a display diff; much nicer than the raw args.
         diff: typeof m.details?.diff === "string" ? clip(m.details.diff, MAX_DIFF) : undefined,
+        calls: codeCalls(m.details),
         timestamp: ts,
       };
     case "bashExecution":
@@ -110,6 +113,22 @@ export function toWire(m: any, sink?: ImageSink): WireMessage | undefined {
     default:
       return { role: m.role, timestamp: ts };
   }
+}
+
+const CALL_STATUS = new Set(["running", "ok", "error", "cancelled"]);
+
+/** The nested tool calls of a codemode run (`details.calls`), trimmed. Undefined for other tools. */
+export function codeCalls(details: any): CodeCall[] | undefined {
+  const calls = details?.calls;
+  if (!Array.isArray(calls)) return undefined;
+  return calls.slice(-MAX_CODE_CALLS).map((c: any) => ({
+    name: String(c?.name ?? "?"),
+    args: typeof c?.args === "string" && c.args ? clip(c.args, MAX_CODE_CALL_ARGS) : undefined,
+    status: CALL_STATUS.has(c?.status) ? c.status : "running",
+    durationMs: typeof c?.durationMs === "number" ? Math.round(c.durationMs) : undefined,
+    cost: typeof c?.cost === "number" && c.cost > 0 ? c.cost : undefined,
+    error: typeof c?.error === "string" && c.error ? clip(c.error, 1_000) : undefined,
+  }));
 }
 
 /** Render a tool's partial result (from tool_execution_update) to a short text tail. */

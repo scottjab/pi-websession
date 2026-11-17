@@ -158,6 +158,18 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 .md .out pre { background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; overflow-x: auto; }
 .tool .out + .out { border-top: 1px dashed var(--border); }
 .tool .out.args pre { color: var(--fg2); }
+.tool .calls { padding: 6px 10px; font: 12.5px/1.5 var(--mono); border-top: 1px dashed var(--border); }
+.tool .calls:first-child { border-top: 0; }
+.tool .call { display: flex; gap: 8px; align-items: baseline; min-width: 0; cursor: pointer; }
+.tool .call .ci { flex: none; width: 1.2em; text-align: center; }
+.tool .call .ci .spin { width: 8px; height: 8px; }
+.tool .call.ok .ci { color: var(--ok); } .tool .call.error .ci { color: var(--err); } .tool .call.cancelled .ci { color: var(--fg3); }
+.tool .call .cn { flex: none; font-weight: 600; }
+.tool .call .ca { flex: 1; min-width: 0; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool .call.wide { flex-wrap: wrap; } .tool .call.wide .ca { white-space: pre-wrap; word-break: break-all; flex-basis: 100%; order: 9; padding-left: 2em; }
+.tool .call .cd { flex: none; color: var(--fg3); }
+.tool .call-err { padding-left: 2em; color: var(--err); white-space: pre-wrap; word-break: break-word; }
+.tool .calls .sum { color: var(--fg3); }
 .tool .out.err pre { color: var(--err); }
 .tool .ts.dim { color: var(--fg3); }
 .tool .ta .dim { color: var(--fg3); }
@@ -391,11 +403,16 @@ function fmt(text, cls = "") {
   return S.raw ? el("div", (cls + " raw").trim(), esc(text)) : el("div", (cls + " md").trim(), md(text));
 }
 
+/** First line of a codemode script worth showing, skipping blanks and the `// @options:` line. */
+function codeHead(code) {
+  return String(code).split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("// @options")) ?? "";
+}
 function argSummary(name, a) {
   if (!a || typeof a !== "object") return "";
   if (a._truncated) return short(a._truncated, 160);
   const n = String(name).toLowerCase();
   if (n === "bash" || a.command) return a.command ?? "";
+  if (n === "codemode" && typeof a.code === "string") return codeHead(a.code);
   if (a.path || a.file_path) return (a.path || a.file_path) + (a.offset ? `:${a.offset}` : "");
   if (a.pattern) return `${a.pattern}${a.path ? "  in " + a.path : ""}`;
   if (n === "subagent") {
@@ -453,14 +470,45 @@ function renderToolCard(rec, call, opts = {}) {
   d.dataset.id = call.id;
   d.dataset.name = call.name;
   const k = rec.meta.id + ":" + call.id;
-  d.open = S.toolOpen.has(k);
+  const openByDefault = String(call.name).toLowerCase() === "codemode";
+  d.open = openByDefault ? !S.toolShut.has(k) : S.toolOpen.has(k);
   fillToolCard(d, rec, call, opts);
   d.addEventListener("toggle", () => {
     d.open ? S.toolOpen.add(k) : S.toolOpen.delete(k);
+    d.open ? S.toolShut.delete(k) : S.toolShut.add(k);
     // Bodies are built lazily, so big outputs cost nothing until opened.
     if (d.open && d._stale) fillToolCard(d, ...d._stale);
   });
   return d;
+}
+// ---------- codemode: script + its nested tool calls, like pi's TUI row ----------
+const SCRIPT_HEADER = /^Script (?:completed|failed)\nWall time [\d.]+ seconds\nOutput:\n/;
+const CALL_ICON = { running: '<span class="spin"></span>', ok: "✓", error: "✗", cancelled: "⊘" };
+const fmtCost = (c) => "$" + (c >= 0.01 ? c.toFixed(2) : c.toPrecision(2));
+function callsList(calls) {
+  const box = el("div", "calls");
+  for (const c of calls) {
+    const row = el("div", "call " + c.status,
+      `<span class="ci">${CALL_ICON[c.status] ?? "?"}</span><span class="cn">${esc(c.name)}</span>` +
+      `<span class="ca">${c.args ? hl(c.args, "json") : ""}</span>` +
+      (c.durationMs != null ? `<span class="cd">${fmtDur(c.durationMs)}</span>` : "") +
+      (c.cost ? `<span class="cd">${fmtCost(c.cost)}</span>` : ""));
+    row.title = "click to show the full arguments";
+    row.addEventListener("click", (e) => { e.stopPropagation(); row.classList.toggle("wide"); });
+    box.appendChild(row);
+    if (c.error) box.appendChild(el("div", "call-err", esc(c.error)));
+  }
+  const priced = calls.filter((c) => c.cost);
+  if (priced.length > 1) box.appendChild(el("div", "sum", "model calls: " + fmtCost(priced.reduce((t, c) => t + c.cost, 0))));
+  return box;
+}
+function callCounts(calls) {
+  if (!calls?.length) return "";
+  const err = calls.filter((c) => c.status === "error").length, run = calls.filter((c) => c.status === "running").length;
+  let t = `${calls.length} call${calls.length === 1 ? "" : "s"}`;
+  if (run) t += `, ${run} running`;
+  if (err) t += `, <span class="del">${err} failed</span>`;
+  return ` <span class="dim">· ${t}</span>`;
 }
 const pathArg = (a) => a && typeof a === "object" ? (a.path || a.file_path || "") : "";
 function fillToolCard(d, rec, call, opts = {}) {
@@ -469,7 +517,9 @@ function fillToolCard(d, rec, call, opts = {}) {
   const live = rec.tools.get(call.id);
   const name = String(call.name).toLowerCase();
   const a = call.arguments && typeof call.arguments === "object" ? call.arguments : {};
-  const outText = res ? textOf(res.content) : live?.partial || "";
+  let outText = res ? textOf(res.content) : live?.partial || "";
+  const calls = res?.calls ?? live?.calls ?? [];
+  if (name === "codemode") outText = outText.replace(SCRIPT_HEADER, "");
   const exit = res && /Command exited with code (\d+)\s*$/.exec(outText)?.[1];
   const dur = res?.durationMs ?? live?.durationMs;
   let status;
@@ -487,6 +537,7 @@ function fillToolCard(d, rec, call, opts = {}) {
   const diff = name === "edit" ? (res?.diff ?? (Array.isArray(a.edits) ? argsDiff(a.edits) : "")) : "";
   if (diff) { const c = diffCounts(diff); ta += ` <span class="add">+${c.a}</span> <span class="del">−${c.d}</span>`; }
   if (name === "write" && typeof a.content === "string") ta += ` <span class="dim">${a.content.split("\n").length} lines</span>`;
+  if (name === "codemode") ta += callCounts(calls);
   const kidBtns = kids.map((k) => `<button class="open-child" data-sid="${esc(k.meta.id)}" title="${esc(subText(k.meta))}"><span class="dot ${k.meta.status}"></span>open${kids.length > 1 ? " " + esc(short(title(k), 20)) : ""}</button>`).join("");
   const durHtml = dur != null && res ? `<span class="ts dim">${fmtDur(dur)}</span>` : "";
   const summary = el("summary", "", `<span class="tn">${esc(call.name)}</span><span class="ta">${ta}</span>${kidBtns}${durHtml}${status}`);
@@ -501,6 +552,10 @@ function fillToolCard(d, rec, call, opts = {}) {
   } else if (name === "write" && typeof a.content === "string") {
     add(outBlock(a.content, { lang: extOf(p), nums: true }));
     if (res?.isError) add(outBlock(outText, { cls: "err" }));
+  } else if (name === "codemode") {
+    if (typeof a.code === "string" && a.code.trim()) add(outBlock(a.code.replace(/\r/g, "").trimEnd(), { lang: "js", nums: true }));
+    if (calls.length) add(callsList(calls));
+    if (outText.trim()) add(outBlock(outText, { cls: res?.isError && !hasAnsi(outText) ? "err" : "" }));
   } else if (name === "read" && res && !res.isError && outText) {
     add(outBlock(outText, { lang: extOf(p), nums: true, start: a.offset | 0 || 1 }));
   } else {
@@ -824,6 +879,7 @@ function toast(text, level = "info") {
 // ---------- state sync ----------
 S.thinkOpen = new Set();
 S.toolOpen = new Set();
+S.toolShut = new Set(); // cards that start open (codemode) and were closed by hand
 function upsert(ev) {
   S.sessions.set(ev.sessionId ?? ev.meta.id, { meta: ev.meta, messages: ev.messages || [], partial: ev.partial || null, tools: new Map((ev.tools || []).map((t) => [t.toolCallId, t])) });
 }
