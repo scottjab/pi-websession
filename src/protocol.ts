@@ -85,5 +85,5 @@ export interface ControlCommand {
 /** Hub -> browser initial state. */
 export interface HubState {
   sessions: Array<{ meta: SessionMeta; messages: WireMessage[]; partial: WireMessage | null; tools: ToolState[] }>;
-  hub: { pid: number; startedAt: number; version: string };
+  hub: { pid: number; startedAt: number; version: string; build: string };
 }

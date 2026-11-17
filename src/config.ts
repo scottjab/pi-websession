@@ -1,11 +1,36 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, writeFileSync } from "node:fs";
 import { homedir, networkInterfaces } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { appendFileSync } from "node:fs";
 
 export const APP_ID = "pi-websession";
+
+/**
+ * Identifies this copy of the plugin: a hash of its source files. Differs after any update,
+ * whatever the install (nix store path, git checkout, npm), so a hub can tell it's stale.
+ */
+export const BUILD: string = (() => {
+  try {
+    const h = createHash("sha256");
+    const walk = (dir: string, rel: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) walk(p, `${rel}${e.name}/`);
+        else if (/\.(ts|html)$/.test(e.name)) h.update(`${rel}${e.name}\0`).update(readFileSync(p)).update("\0");
+      }
+    };
+    walk(dirname(fileURLToPath(import.meta.url)), "");
+    return h.digest("hex").slice(0, 12);
+  } catch {
+    return "unknown";
+  }
+})();
+
+/** When this process started. On a hub handoff the newer process wins. */
+export const PROCESS_STARTED = Math.round(Date.now() - process.uptime() * 1000);
 
 export function agentDir(): string {
   return process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");

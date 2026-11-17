@@ -4,7 +4,7 @@ import { open, realpath } from "node:fs/promises";
 import { basename, isAbsolute, resolve, sep } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
-import { APP_ID, bindHosts, debug, isTailscaleAddr, port, tailnetAuthEnabled, tailnetUsers, tailscaleOwner, tailscaleWhois, token } from "./config.ts";
+import { APP_ID, BUILD, PROCESS_STARTED, bindHosts, debug, isTailscaleAddr, port, tailnetAuthEnabled, tailnetUsers, tailscaleOwner, tailscaleWhois, token } from "./config.ts";
 import type { ControlCommand, HubState, SessionEvent, SessionMeta, ToolState, WireMessage } from "./protocol.ts";
 
 export const VERSION = "0.1.0";
@@ -108,6 +108,9 @@ export class Hub {
   readonly publicHost?: string;
   readonly warning?: string;
   private readonly secret = token();
+  /** Set by the owning ProcessNode: step down so a newer build can take the port. */
+  onYield?: () => void;
+  private closing = false;
   /** Tailnet peer address -> verdict, so whois runs about once a minute per device. */
   private whoisCache = new Map<string, { ok: boolean; at: number }>();
 
@@ -161,12 +164,16 @@ export class Hub {
   }
 
   async close(): Promise<void> {
+    this.closing = true;
     clearInterval(this.heartbeat);
     for (const res of this.browsers) res.end();
     for (const o of this.owners.values()) o.res?.end();
     this.browsers.clear();
-    await Promise.all(this.servers.map((s) => new Promise<void>((r) => s.close(() => r()))));
+    // Stop listening, then drop every open socket right away. Waiting first would hang: a
+    // browser's EventSource reconnects at once over its keep-alive socket and keeps it busy.
+    const closed = Promise.all(this.servers.map((s) => new Promise<void>((r) => s.close(() => r()))));
     for (const s of this.servers) s.closeAllConnections?.();
+    await closed;
     this.servers = [];
   }
 
@@ -356,7 +363,7 @@ export class Hub {
   private snapshotState(): HubState {
     return {
       sessions: [...this.sessions.values()].map((r) => ({ meta: r.meta, messages: r.messages, partial: r.partial, tools: [...r.tools.values()] })),
-      hub: { pid: process.pid, startedAt: this.startedAt, version: VERSION },
+      hub: { pid: process.pid, startedAt: this.startedAt, version: VERSION, build: BUILD },
     };
   }
 
@@ -414,10 +421,15 @@ export class Hub {
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (this.closing) {
+      res.writeHead(503, { connection: "close" });
+      res.end();
+      return;
+    }
     const url = new URL(req.url ?? "/", "http://x");
     const path = url.pathname;
 
-    if (path === "/api/ping") return json(res, 200, { app: APP_ID, version: VERSION, pid: process.pid });
+    if (path === "/api/ping") return json(res, 200, { app: APP_ID, version: VERSION, pid: process.pid, build: BUILD, processStarted: PROCESS_STARTED });
     if (path === "/manifest.webmanifest") {
       res.writeHead(200, { "content-type": "application/manifest+json" });
       res.end(JSON.stringify({ name: "pi web", short_name: "pi", start_url: "/", display: "standalone", background_color: "#0d1117", theme_color: "#0d1117" }));
@@ -491,6 +503,20 @@ export class Hub {
     }
 
     // --- publisher ingest (other pi processes on this machine) ---
+    // A pi process running a different build, started after ours, asks for the port.
+    // Newest process wins, so two builds never trade the hub back and forth.
+    if (path === "/ingest/handoff" && req.method === "POST") {
+      const build = url.searchParams.get("build") ?? "";
+      const started = Number(url.searchParams.get("started"));
+      if (!this.onYield || !build || build === BUILD || !(started > PROCESS_STARTED)) return json(res, 409, { error: "no handoff" });
+      debug("hub handoff", BUILD, "->", build);
+      json(res, 200, { ok: true });
+      const y = this.onYield;
+      this.onYield = undefined;
+      setTimeout(y, 50);
+      return;
+    }
+
     if (path === "/ingest/subscribe" && req.method === "GET") {
       const ownerId = url.searchParams.get("owner");
       if (!ownerId) return json(res, 400, { error: "owner required" });

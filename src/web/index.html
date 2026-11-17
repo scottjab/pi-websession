@@ -975,6 +975,9 @@ function connect() {
   es = new EventSource("/api/stream");
   es.addEventListener("state", (e) => {
     const st = JSON.parse(e.data);
+    // A newer hub took over (pi-websession update): load its UI instead of mixing versions.
+    if (S.hubBuild && st.hub?.build && st.hub.build !== S.hubBuild) { location.reload(); return; }
+    S.hubBuild ??= st.hub?.build;
     S.sessions.clear();
     for (const s of st.sessions) upsert({ sessionId: s.meta.id, ...s });
     S.connected = true;

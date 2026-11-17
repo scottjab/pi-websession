@@ -6,7 +6,7 @@
 import { randomBytes } from "node:crypto";
 import { request, type ClientRequest } from "node:http";
 import { hostname } from "node:os";
-import { debug, port, token } from "./config.ts";
+import { BUILD, PROCESS_STARTED, debug, port, token } from "./config.ts";
 import { Hub, type OwnerMessage } from "./hub.ts";
 import type { ControlCommand, SessionEvent } from "./protocol.ts";
 
@@ -21,6 +21,8 @@ export type NodeMode = "idle" | "connecting" | "hub" | "client";
 const FLUSH_MS = 60;
 const MAX_QUEUE = 5000;
 const MAX_BATCH_BYTES = 6 * 1024 * 1024;
+/** After handing the hub off, stay a client this long instead of racing for the port. */
+const YIELD_HOLD_MS = 10_000;
 
 class ProcessNode {
   readonly ownerId = `${hostname()}-${process.pid}-${randomBytes(3).toString("hex")}`;
@@ -36,6 +38,9 @@ class ProcessNode {
   private idleCheck?: NodeJS.Timeout;
   private listeners = new Set<() => void>();
   private retryDelay = 500;
+  private yieldedUntil = 0;
+  /** Warning about the hub we're connected to (it's too old to hand off). Survives reconnects to it. */
+  private hubNote?: string;
   /** Image refs the current hub already has. Reset whenever we (re)connect. */
   private sentImages = new Set<string>();
 
@@ -135,33 +140,87 @@ class ProcessNode {
     this.retryTimer = undefined;
     this.mode = "connecting";
     this.changed();
+    if (Date.now() < this.yieldedUntil) {
+      // We just handed the hub to a newer build: join it, don't grab the port back.
+      this.connectClient();
+      return;
+    }
     Hub.start().then(
-      (hub) => {
-        if (this.sessions.size === 0) {
-          void hub.close();
-          this.mode = "idle";
-          this.changed();
-          return;
-        }
-        this.hub = hub;
-        this.mode = "hub";
-        this.lastError = hub.warning;
-        this.retryDelay = 500;
-        hub.attachOwner(this.ownerId, (msg: OwnerMessage) => {
-          if (msg.type === "command") queueMicrotask(() => this.dispatch(msg.command));
-        });
-        this.resyncAll();
-        this.startIdleCheck();
-        this.changed();
-      },
+      (hub) => this.becomeHub(hub),
       (err: any) => {
-        if (err?.code === "EADDRINUSE") this.connectClient();
-        else {
+        if (err?.code === "EADDRINUSE") {
+          void this.tryHandoff().then((took) => (took ? this.startAfterHandoff() : this.connectClient()));
+        } else {
           this.lastError = `hub failed: ${err?.code ?? err?.message ?? err}`;
           this.scheduleRetry();
         }
       },
     );
+  }
+
+  private becomeHub(hub: Hub): void {
+    if (this.sessions.size === 0) {
+      void hub.close();
+      this.mode = "idle";
+      this.changed();
+      return;
+    }
+    this.hub = hub;
+    this.mode = "hub";
+    this.hubNote = undefined;
+    this.lastError = hub.warning;
+    this.retryDelay = 500;
+    hub.attachOwner(this.ownerId, (msg: OwnerMessage) => {
+      if (msg.type === "command") queueMicrotask(() => this.dispatch(msg.command));
+    });
+    hub.onYield = () => void this.yieldHub();
+    this.resyncAll();
+    this.startIdleCheck();
+    this.changed();
+  }
+
+  /**
+   * The port is taken. If the hub there runs another build and its process is older than ours
+   * (a pi that predates an update), ask it to step down. True when it agreed.
+   */
+  private async tryHandoff(): Promise<boolean> {
+    const ping = await localJson("GET", "/api/ping");
+    this.hubNote = undefined;
+    if (!ping || ping.app !== "pi-websession" || ping.build === BUILD) return false;
+    if (!ping.build) {
+      // Predates handoff: it can't be asked, only restarted.
+      this.hubNote = `hub (pid ${ping.pid}) runs an older pi-websession; restart that pi to update the web UI`;
+      return false;
+    }
+    if (!(Number(ping.processStarted) < PROCESS_STARTED)) return false;
+    const r = await localJson("POST", `/ingest/handoff?build=${encodeURIComponent(BUILD)}&started=${PROCESS_STARTED}`);
+    debug("handoff from", ping.build, "pid", ping.pid, r?.ok ? "accepted" : "refused");
+    return !!r?.ok;
+  }
+
+  /** Grab the port the old hub is releasing. Fast retries so its clients don't win the race. */
+  private startAfterHandoff(attempt = 0): void {
+    Hub.start().then(
+      (hub) => this.becomeHub(hub),
+      (err: any) => {
+        if (err?.code === "EADDRINUSE" && attempt < 40) setTimeout(() => this.startAfterHandoff(attempt + 1), 75).unref();
+        else this.connectClient();
+      },
+    );
+  }
+
+  /** Our hub was asked to step down for a newer build. Close it and rejoin as a client. */
+  private async yieldHub(): Promise<void> {
+    const hub = this.hub;
+    if (!hub || this.mode !== "hub") return;
+    this.yieldedUntil = Date.now() + YIELD_HOLD_MS;
+    clearInterval(this.idleCheck);
+    this.hub = undefined;
+    this.mode = "connecting";
+    this.changed();
+    await hub.close();
+    // The new hub needs a moment to bind; connect failures retry with backoff.
+    setTimeout(() => this.ensureRunning(), 250).unref();
   }
 
   private scheduleRetry(): void {
@@ -210,7 +269,7 @@ class ProcessNode {
           }
           if (event === "ready") {
             this.mode = "client";
-            this.lastError = undefined;
+            this.lastError = this.hubNote;
             this.retryDelay = 500;
             this.queue = [];
             this.resyncAll();
@@ -307,6 +366,31 @@ class ProcessNode {
     sub?.destroy();
     this.changed();
   }
+}
+
+/** Small JSON request to the hub on loopback, with the shared token. Undefined on any failure. */
+function localJson(method: "GET" | "POST", path: string): Promise<any> {
+  return new Promise((resolve) => {
+    const req = request(
+      { host: "127.0.0.1", port: port(), path, method, timeout: 2000, headers: { authorization: `Bearer ${token()}`, "content-length": 0 } },
+      (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => (body += c));
+        res.on("end", () => {
+          if (res.statusCode !== 200) return resolve(undefined);
+          try {
+            resolve(JSON.parse(body));
+          } catch {
+            resolve(undefined);
+          }
+        });
+      },
+    );
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => resolve(undefined));
+    req.end();
+  });
 }
 
 const KEY = Symbol.for("pi-websession.process-node.v1");
