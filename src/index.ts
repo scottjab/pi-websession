@@ -244,6 +244,7 @@ class Publisher {
     }
     this.meta.usage = { input, output, cost };
     this.refreshContext();
+    this.refreshModels();
     return {
       type: "snapshot",
       sessionId: this.id,
@@ -252,6 +253,24 @@ class Publisher {
       partial: this.partial,
       tools: [...this.tools.values()],
     };
+  }
+
+  /** Models offered in the web picker. Same set pi's own model cycling uses. */
+  private refreshModels(): void {
+    try {
+      const scoped = this.ctx.scopedModels?.map((s) => s.model) ?? [];
+      const list = scoped.length ? scoped : this.ctx.modelRegistry.getAvailable();
+      const ids = [...new Set(list.map((m) => `${m.provider}/${m.id}`))].slice(0, 300);
+      if (this.meta.model && !ids.includes(this.meta.model)) ids.unshift(this.meta.model);
+      this.meta.models = ids;
+    } catch {}
+  }
+
+  /** Re-send the picker list if it changed (auth added, scope changed). */
+  syncModels(): void {
+    const before = JSON.stringify(this.meta.models ?? []);
+    this.refreshModels();
+    if (JSON.stringify(this.meta.models ?? []) !== before) this.emit({ type: "meta", sessionId: this.id, patch: { models: this.meta.models } });
   }
 
   private refreshContext(): void {
@@ -385,6 +404,23 @@ class Publisher {
         });
         this.notice("info", "Compaction started.");
         return;
+      case "model": {
+        const want = String(cmd.model ?? "");
+        const slash = want.indexOf("/");
+        const model = slash > 0 ? ctx.modelRegistry.find(want.slice(0, slash), want.slice(slash + 1)) : undefined;
+        if (!model) return this.notice("error", `Unknown model: ${want}`);
+        if (want === this.meta.model) return;
+        // Session-only, like picking a model for this chat. pi's saved default stays as is.
+        this.pi.setModel(model).then(
+          (ok) => {
+            if (!ok) return this.notice("error", `No API key for ${want}.`);
+            this.notice("info", `Model set to ${want}.`);
+            if (ctx.hasUI) ctx.ui.notify(`[web] model → ${want}`, "info");
+          },
+          (err: any) => this.notice("error", `Model switch failed: ${err?.message ?? err}`),
+        );
+        return;
+      }
       case "prompt": {
         const text = (cmd.text ?? "").trim();
         if (!text) return;
@@ -533,6 +569,7 @@ export default function websession(pi: ExtensionAPI) {
     touch(ctx);
     const m = e.model ?? ctx.model;
     if (m) pub?.patch({ model: `${m.provider}/${m.id}` });
+    pub?.syncModels();
   });
   pi.on("thinking_level_select", async (e: any, ctx) => {
     touch(ctx);

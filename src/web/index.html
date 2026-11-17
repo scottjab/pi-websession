@@ -134,6 +134,9 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 .btn { border: 0; border-radius: 10px; padding: 0 14px; height: 40px; background: var(--accent); color: var(--accent-fg); font-weight: 600; }
 .btn.sec { background: var(--bg3); color: var(--fg); }
 .btn.danger { background: var(--err); color: #fff; }
+#model { display: none; max-width: 900px; margin: 0 auto 6px; }
+#model.show { display: flex; }
+#model select { max-width: 100%; min-width: 0; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--fg2); font: inherit; font-size: 12px; padding: 0 6px; }
 #mode { height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; padding: 0 4px; }
 .hide { display: none !important; }
 #toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: 96px; z-index: 30; display: flex; flex-direction: column; gap: 6px; width: min(420px, 92vw); pointer-events: none; }
@@ -195,6 +198,7 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 <button id="jump">↓ latest</button>
 <footer>
   <div id="ro">view only · run <code>/web control</code> in pi to allow control</div>
+  <div id="model"><select id="modelSel" title="Model for this session"></select></div>
   <div id="composer">
     <textarea id="input" rows="1" placeholder="Message pi…" enterkeyhint="send"></textarea>
     <select id="mode" class="hide" title="While busy"><option value="steer">steer</option><option value="followUp">after</option></select>
@@ -542,6 +546,7 @@ function renderAssistant(rec, m, streaming) {
       if (!b.thinking && !b.redacted) return;
       node = el("details", "think");
       const live = streaming && i === blocks.length - 1;
+      if (live) node.dataset.live = rec.meta.id + ":" + i;
       node.open = live || S.thinkOpen.has(rec.meta.id + ":" + m.timestamp + ":" + i);
       node.innerHTML = `<summary><span class="lbl">${live ? "thinking…" : "thought"}</span><span class="usage">${b.redacted ? "(redacted)" : short(b.thinking, 80)}</span></summary>`;
       node.appendChild(fmt(b.thinking || "", "body"));
@@ -620,9 +625,16 @@ function fullRender() {
 function renderPartial(rec) {
   if (R?.sid !== rec.meta.id) return;
   const next = rec.partial ? renderAssistant(rec, rec.partial, alive(rec)) : null;
+  // The live thinking body follows its newest text, unless the reader scrolled up inside it.
+  const oldBody = R.partialEl?.querySelector("details.think[data-live] .body");
+  const oldKey = oldBody?.parentElement.dataset.live;
+  const follow = !oldBody || oldBody.scrollHeight - oldBody.scrollTop - oldBody.clientHeight < 40;
+  const oldTop = oldBody?.scrollTop;
   if (R.partialEl) { next ? R.partialEl.replaceWith(next) : R.partialEl.remove(); }
   else if (next) logEl.appendChild(next);
   R.partialEl = next;
+  const body = next?.querySelector("details.think[data-live] .body");
+  if (body) body.scrollTop = follow || body.parentElement.dataset.live !== oldKey ? body.scrollHeight : oldTop;
   toBottom();
 }
 
@@ -681,6 +693,7 @@ function renderChrome() {
   // composer
   const can = !!rec?.meta.controllable && rec.meta.status !== "offline" && rec.meta.status !== "ended";
   $("composer").classList.toggle("show", can);
+  renderModelPicker(rec, can);
   $("ro").classList.toggle("hide", can || !rec);
   const busy = rec?.meta.status === "running" || rec?.meta.status === "waiting_ui";
   $("abort").classList.toggle("hide", !busy);
@@ -688,6 +701,30 @@ function renderChrome() {
   $("send").textContent = busy ? "Queue" : "Send";
   if ($("drawer").classList.contains("open")) renderDrawer();
 }
+
+/** Model picker. Shows the session's current model (the one it started with until someone switches). */
+function renderModelPicker(rec, can) {
+  const box = $("model"), sel = $("modelSel");
+  const list = rec?.meta.models || [];
+  const show = can && list.length > 1;
+  box.classList.toggle("show", show);
+  if (!show || sel.matches(":focus")) return;
+  const key = rec.meta.id + "|" + list.join(",");
+  if (sel.dataset.key !== key) {
+    sel.dataset.key = key;
+    sel.innerHTML = list.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
+  }
+  sel.value = rec.meta.model || "";
+}
+$("modelSel").onchange = async (e) => {
+  const rec = S.sessions.get(S.sel);
+  const want = e.target.value;
+  if (!rec || want === rec.meta.model) return;
+  // Snap back to the real model until pi confirms the switch with a meta update.
+  e.target.value = rec.meta.model || "";
+  e.target.blur();
+  await control("model", { model: want });
+};
 
 function renderDrawer() {
   const p = $("drawerPanel");

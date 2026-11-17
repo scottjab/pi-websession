@@ -14,7 +14,10 @@ export interface SessionMeta {
   kind: "main" | "subagent";
   /** Short label for subagents, e.g. the run id. */
   label?: string;
+  /** Current model as "provider/id". */
   model?: string;
+  /** Models the web UI can switch to ("provider/id"): pi's scoped list if set, else every model with auth. */
+  models?: string[];
   thinkingLevel?: string;
   status: SessionStatus;
   /** True when the user consented to web control for this session tree. */
@@ -58,8 +61,10 @@ export type SessionEvent =
 export interface ControlCommand {
   cmdId: string;
   sessionId: string;
-  action: "prompt" | "abort" | "compact";
+  action: "prompt" | "abort" | "compact" | "model";
   text?: string;
+  /** For "model": "provider/id". */
+  model?: string;
   /** How to deliver a prompt while the agent is busy. */
   mode?: "steer" | "followUp";
 }
