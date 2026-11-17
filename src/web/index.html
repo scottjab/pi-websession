@@ -134,9 +134,10 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 .btn { border: 0; border-radius: 10px; padding: 0 14px; height: 40px; background: var(--accent); color: var(--accent-fg); font-weight: 600; }
 .btn.sec { background: var(--bg3); color: var(--fg); }
 .btn.danger { background: var(--err); color: #fff; }
-#model { display: none; max-width: 900px; margin: 0 auto 6px; }
+#model { display: none; max-width: 900px; margin: 0 auto 6px; gap: 6px; justify-content: center; }
 #model.show { display: flex; }
 #model select { max-width: 100%; min-width: 0; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--fg2); font: inherit; font-size: 12px; padding: 0 6px; }
+#thinkSel { flex: none; }
 #mode { height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; padding: 0 4px; }
 .hide { display: none !important; }
 #toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: 96px; z-index: 30; display: flex; flex-direction: column; gap: 6px; width: min(420px, 92vw); pointer-events: none; }
@@ -216,7 +217,7 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 <button id="jump">↓ latest</button>
 <footer>
   <div id="ro">view only · run <code>/web control</code> in pi to allow control</div>
-  <div id="model"><select id="modelSel" title="Model for this session"></select></div>
+  <div id="model"><select id="modelSel" title="Model for this session"></select><select id="thinkSel" title="Thinking level for this session"></select></div>
   <div id="composer">
     <textarea id="input" rows="1" placeholder="Message pi…" enterkeyhint="send"></textarea>
     <select id="mode" class="hide" title="While busy"><option value="steer">steer</option><option value="followUp">after</option></select>
@@ -774,30 +775,45 @@ function renderChrome() {
   if ($("drawer").classList.contains("open")) renderDrawer();
 }
 
-/** Model picker. Shows the session's current model (the one it started with until someone switches). */
+/** Model + thinking level pickers. */
+const FALLBACK_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 function renderModelPicker(rec, can) {
-  const box = $("model"), sel = $("modelSel");
+  const box = $("model"), sel = $("modelSel"), th = $("thinkSel");
   const list = rec?.meta.models || [];
-  const show = can && list.length > 1;
-  box.classList.toggle("show", show);
-  if (!show || sel.matches(":focus")) return;
-  const key = rec.meta.id + "|" + list.join(",");
-  if (sel.dataset.key !== key) {
-    sel.dataset.key = key;
-    // One optgroup per provider, in the order pi lists them, so a long catalog stays navigable.
-    const groups = new Map();
-    for (const m of list) {
-      const i = m.indexOf("/");
-      const prov = i > 0 ? m.slice(0, i) : "";
-      if (!groups.has(prov)) groups.set(prov, []);
-      groups.get(prov).push(m);
+  const levels = rec?.meta.thinkingLevels?.length ? rec.meta.thinkingLevels : FALLBACK_LEVELS;
+  const showModels = can && list.length > 1;
+  const showThinking = can && !!rec?.meta.thinkingLevels?.length;
+  box.classList.toggle("show", can);
+  if (!can || !rec) return;
+  if (showModels && !sel.matches(":focus")) {
+    const key = rec.meta.id + "|" + list.join(",");
+    if (sel.dataset.key !== key) {
+      sel.dataset.key = key;
+      // One optgroup per provider, in the order pi lists them, so a long catalog stays navigable.
+      const groups = new Map();
+      for (const m of list) {
+        const i = m.indexOf("/");
+        const prov = i > 0 ? m.slice(0, i) : "";
+        if (!groups.has(prov)) groups.set(prov, []);
+        groups.get(prov).push(m);
+      }
+      sel.innerHTML = [...groups].map(([prov, ms]) =>
+        `<optgroup label="${esc(prov || "other")}">` +
+        ms.map((m) => `<option value="${esc(m)}">${esc(m.slice(prov.length + (prov ? 1 : 0)))}</option>`).join("") +
+        "</optgroup>").join("");
     }
-    sel.innerHTML = [...groups].map(([prov, ms]) =>
-      `<optgroup label="${esc(prov || "other")}">` +
-      ms.map((m) => `<option value="${esc(m)}">${esc(m.slice(prov.length + (prov ? 1 : 0)))}</option>`).join("") +
-      "</optgroup>").join("");
+    sel.value = rec.meta.model || "";
   }
-  sel.value = rec.meta.model || "";
+  sel.style.display = showModels ? "" : "none";
+  th.style.display = showThinking ? "" : "none";
+  if (!showThinking || th.matches(":focus")) return;
+  const cur = rec.meta.thinkingLevel || levels[0];
+  const key = rec.meta.id + "|" + levels.join(",");
+  if (th.dataset.key !== key) {
+    th.dataset.key = key;
+    th.innerHTML = levels.map((l) => `<option value="${esc(l)}">${esc(l)}</option>`).join("");
+  }
+  th.value = levels.includes(cur) ? cur : levels[0];
 }
 $("modelSel").onchange = async (e) => {
   const rec = S.sessions.get(S.sel);
@@ -807,6 +823,16 @@ $("modelSel").onchange = async (e) => {
   e.target.value = rec.meta.model || "";
   e.target.blur();
   await control("model", { model: want });
+};
+$("thinkSel").onchange = async (e) => {
+  const rec = S.sessions.get(S.sel);
+  const want = e.target.value;
+  const levels = rec?.meta.thinkingLevels?.length ? rec.meta.thinkingLevels : FALLBACK_LEVELS;
+  const cur = rec?.meta.thinkingLevel || levels[0];
+  if (!rec || want === cur) return;
+  e.target.value = cur;
+  e.target.blur();
+  await control("thinking", { level: want });
 };
 
 function renderDrawer() {

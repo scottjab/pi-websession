@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/compat";
 import { existsSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
@@ -125,6 +126,7 @@ class Publisher {
       label: sub && file ? subagentLabel(file) : undefined,
       model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
       thinkingLevel: (ctx as any).thinkingLevel,
+      thinkingLevels: this.levelsFor(ctx.model),
       status: ctx.isIdle() ? "idle" : "running",
       controllable,
       pid: process.pid,
@@ -253,6 +255,15 @@ class Publisher {
       partial: this.partial,
       tools: [...this.tools.values()],
     };
+  }
+
+  /** Thinking levels pi supports for this model (from the model's thinkingLevelMap). */
+  levelsFor(model: any): string[] | undefined {
+    try {
+      return model ? [...getSupportedThinkingLevels(model)] : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Models offered in the web picker. Same set pi's own model cycling uses. */
@@ -425,6 +436,22 @@ class Publisher {
         );
         return;
       }
+      case "thinking": {
+        const level = String(cmd.level ?? "");
+        const allowed = this.levelsFor(ctx.model) ?? [];
+        if (!allowed.length) return this.notice("error", "This model does not support thinking levels.");
+        if (!allowed.includes(level)) return this.notice("error", `Unknown thinking level for this model: ${level} (supported: ${allowed.join(", ")})`);
+        if (level === (this.meta.thinkingLevel ?? undefined)) return;
+        // Session-only, like the model picker. pi clamps to levels the model supports.
+        try {
+          (this.pi as any).setThinkingLevel(level);
+          this.notice("info", `Thinking level set to ${level}.`);
+          if (ctx.hasUI) ctx.ui.notify(`[web] thinking → ${level}`, "info");
+        } catch (err: any) {
+          this.notice("error", `Thinking level change failed: ${err?.message ?? err}`);
+        }
+        return;
+      }
       case "prompt": {
         const text = (cmd.text ?? "").trim();
         if (!text) return;
@@ -575,7 +602,7 @@ export default function websession(pi: ExtensionAPI) {
   pi.on("model_select", async (e: any, ctx) => {
     touch(ctx);
     const m = e.model ?? ctx.model;
-    if (m) pub?.patch({ model: `${m.provider}/${m.id}` });
+    if (m) pub?.patch({ model: `${m.provider}/${m.id}`, thinkingLevels: pub.levelsFor(m) });
     pub?.syncModels();
   });
   pi.on("thinking_level_select", async (e: any, ctx) => {

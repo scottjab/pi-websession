@@ -19,6 +19,8 @@ export interface SessionMeta {
   /** Models the web UI can switch to ("provider/id"): pi's scoped list if set, else every model with auth. */
   models?: string[];
   thinkingLevel?: string;
+  /** Thinking levels the current model supports, from pi's model catalogue. */
+  thinkingLevels?: string[];
   status: SessionStatus;
   /** True when the user consented to web control for this session tree. */
   controllable: boolean;
@@ -74,10 +76,12 @@ export type SessionEvent =
 export interface ControlCommand {
   cmdId: string;
   sessionId: string;
-  action: "prompt" | "abort" | "compact" | "model";
+  action: "prompt" | "abort" | "compact" | "model" | "thinking";
   text?: string;
   /** For "model": "provider/id". */
   model?: string;
+  /** For "thinking": pi thinking level (off, minimal, low, medium, high, xhigh, max). */
+  level?: string;
   /** How to deliver a prompt while the agent is busy. */
   mode?: "steer" | "followUp";
 }
