@@ -42,8 +42,10 @@ function subagentLabel(file: string): string {
 async function shareUrl(): Promise<string> {
   const b = bindHosts();
   const dns = b.publicHost ? await tailscaleDnsName() : undefined;
-  const host = dns ?? b.publicHost ?? "127.0.0.1";
-  return `http://${host}:${port()}/?t=${token()}`;
+  const host = dns ?? b.publicHost ?? b.lanHosts[0] ?? "127.0.0.1";
+  const t = token();
+  const lan = b.lanHosts.filter((h) => h !== host).map((h) => `http://${h}:${port()}/?t=${t}`);
+  return [`http://${host}:${port()}/?t=${t}`, ...lan.map((u) => `${u} (LAN)`)].join("\n");
 }
 
 // ---------------------------------------------------------------------------

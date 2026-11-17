@@ -111,18 +111,19 @@ export class Hub {
   static async start(): Promise<Hub> {
     const hub = new Hub();
     const p = port();
-    try {
-      for (const host of hub.hosts) {
-        const server = createServer((req, res) => {
-          hub.handle(req, res).catch((err) => {
-            if (!res.headersSent) json(res, 500, { error: String(err?.message ?? err) });
-            else res.end();
-          });
+    const failed: string[] = [];
+    for (const host of hub.hosts) {
+      const server = createServer((req, res) => {
+        hub.handle(req, res).catch((err) => {
+          if (!res.headersSent) json(res, 500, { error: String(err?.message ?? err) });
+          else res.end();
         });
-        server.keepAliveTimeout = 65_000;
-        // Never keep the hosting pi alive just because a browser or another
-        // publisher is connected. When this process exits, a client takes over.
-        server.on("connection", (sock) => sock.unref());
+      });
+      server.keepAliveTimeout = 65_000;
+      // Never keep the hosting pi alive just because a browser or another
+      // publisher is connected. When this process exits, a client takes over.
+      server.on("connection", (sock) => sock.unref());
+      try {
         await new Promise<void>((resolve, reject) => {
           server.once("error", reject);
           server.listen(p, host, () => {
@@ -130,13 +131,17 @@ export class Hub {
             resolve();
           });
         });
-        // The loopback listener decides hub ownership; a failure on the public
-        // address after that (e.g. tailscale went away) is not fatal.
         hub.servers.push(server);
+      } catch (err: any) {
+        // The first (loopback) listener decides hub ownership. Failing on an
+        // extra address (wifi dropped, tailscale down) is not fatal.
+        if (hub.servers.length === 0) throw err;
+        failed.push(`${host} (${err?.code ?? err})`);
       }
-    } catch (err: any) {
-      if (hub.servers.length === 0) throw err;
-      (hub as any).warning = `Could not bind ${hub.hosts.slice(hub.servers.length).join(", ")}: ${err?.code ?? err}`;
+    }
+    if (failed.length) {
+      const w = `Could not bind ${failed.join(", ")}`;
+      (hub as any).warning = hub.warning ? `${hub.warning}; ${w}` : w;
     }
     for (const s of hub.servers) s.unref();
     hub.heartbeat = setInterval(() => hub.pingAll(), 15_000);

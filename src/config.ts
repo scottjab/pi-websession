@@ -37,24 +37,79 @@ export function tailscaleIPv4(): string | undefined {
   return undefined;
 }
 
-/**
- * Addresses the hub listens on. Always 127.0.0.1 (publishers in other pi
- * processes connect there). Plus the public bind:
- *   PI_WEBSESSION_HOST unset / "tailscale"  -> tailscale IP if present
- *   "local"                                  -> loopback only
- *   "all"                                    -> 0.0.0.0
- *   anything else                            -> that address
- */
-export function bindHosts(): { hosts: string[]; publicHost?: string; warning?: string } {
-  const pref = (process.env.PI_WEBSESSION_HOST || "tailscale").trim();
-  if (pref === "local") return { hosts: ["127.0.0.1"] };
-  if (pref === "all") return { hosts: ["0.0.0.0"], publicHost: tailscaleIPv4() };
-  if (pref === "tailscale") {
-    const ts = tailscaleIPv4();
-    if (!ts) return { hosts: ["127.0.0.1"], warning: "No Tailscale address found, listening on 127.0.0.1 only" };
-    return { hosts: ["127.0.0.1", ts], publicHost: ts };
+const VIRTUAL_IFACE = /^(lo|docker|br-|veth|virbr|vnet|tap|tun|wg|podman|cni|flannel|cali|vmnet|vboxnet|zt|utun|tailscale)/;
+
+function isPrivateLan(addr: string): boolean {
+  const [a, b] = addr.split(".").map(Number);
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+/** Private IPv4 addresses on physical-looking interfaces (wifi/ethernet). Skips docker, VPN, VM bridges. */
+export function lanIPv4s(): string[] {
+  const out: string[] = [];
+  for (const [name, addrs] of Object.entries(networkInterfaces())) {
+    if (VIRTUAL_IFACE.test(name)) continue;
+    for (const a of addrs ?? []) {
+      if (a.family === "IPv4" && !a.internal && isPrivateLan(a.address)) out.push(a.address);
+    }
   }
-  return { hosts: pref === "127.0.0.1" ? [pref] : ["127.0.0.1", pref], publicHost: pref };
+  return out;
+}
+
+export interface BindPlan {
+  hosts: string[];
+  /** Tailscale address, used for the share URL (via MagicDNS when available). */
+  publicHost?: string;
+  /** LAN addresses, shown as extra URLs. */
+  lanHosts: string[];
+  warning?: string;
+}
+
+/**
+ * Addresses the hub listens on. Always 127.0.0.1 first (publishers in other pi
+ * processes connect there). PI_WEBSESSION_HOST is a comma list of:
+ *   tailscale  -> the 100.64/10 address, if present
+ *   lan        -> private IPv4s on wifi/ethernet (not docker/VM/VPN bridges)
+ *   local      -> loopback only
+ *   all        -> 0.0.0.0
+ *   an IP      -> that address
+ * Default: "tailscale,lan".
+ */
+export function bindHosts(): BindPlan {
+  const prefs = (process.env.PI_WEBSESSION_HOST || "tailscale,lan")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const plan: BindPlan = { hosts: ["127.0.0.1"], lanHosts: [] };
+  const missing: string[] = [];
+  const add = (h: string) => {
+    if (!plan.hosts.includes(h)) plan.hosts.push(h);
+  };
+  for (const pref of prefs) {
+    if (pref === "local") continue;
+    if (pref === "all") {
+      plan.hosts = ["0.0.0.0"];
+      plan.publicHost = tailscaleIPv4();
+      plan.lanHosts = lanIPv4s();
+      return plan;
+    }
+    if (pref === "tailscale") {
+      const ts = tailscaleIPv4();
+      if (ts) {
+        add(ts);
+        plan.publicHost = ts;
+      } else missing.push("Tailscale");
+    } else if (pref === "lan") {
+      const lan = lanIPv4s();
+      if (lan.length) lan.forEach((h) => (add(h), plan.lanHosts.push(h)));
+      else if (prefs.length === 1) missing.push("LAN");
+    } else if (pref !== "127.0.0.1") {
+      add(pref);
+      plan.publicHost ??= pref;
+    }
+  }
+  if (missing.length) plan.warning = `No ${missing.join(" or ")} address found`;
+  return plan;
 }
 
 let dnsNameCache: Promise<string | undefined> | undefined;
