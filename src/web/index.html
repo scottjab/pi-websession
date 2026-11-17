@@ -130,6 +130,9 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 .toast { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; box-shadow: 0 2px 10px #0004; }
 .toast.error { border-color: var(--err); } .toast.warning { border-color: var(--warn); }
 #menuBtn { background: none; border: 0; font-size: 20px; padding: 0 4px; color: var(--fg2); }
+#fmtBtn { background: none; border: 1px solid var(--border); border-radius: 6px; font: 600 11px var(--mono); padding: 3px 6px; color: var(--fg2); }
+.raw { white-space: pre-wrap; }
+.msg.user.md, details.think .body.md, .msg.summary.md { white-space: normal; }
 </style>
 </head>
 <body>
@@ -139,6 +142,7 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
     <span class="titlewrap"><span id="sessTitle">pi web</span><span id="sessSub">connecting…</span></span>
   </button>
   <span id="conn">offline</span>
+  <button id="fmtBtn" title="Switch between rendered markdown and raw text">MD</button>
   <button id="menuBtn" aria-label="Theme" title="Toggle theme">◐</button>
 </header>
 <nav id="kids"></nav>
@@ -202,6 +206,11 @@ function md(src) {
   }
   flush();
   return out.join("").replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[+i]);
+}
+
+// Rendered markdown or raw text, per the header toggle.
+function fmt(text, cls = "") {
+  return S.raw ? el("div", (cls + " raw").trim(), esc(text)) : el("div", (cls + " md").trim(), md(text));
 }
 
 function argSummary(name, a) {
@@ -295,13 +304,14 @@ function renderAssistant(rec, m, streaming) {
     let node;
     if (b.type === "text") {
       if (!b.text) return;
-      node = el("div", "md" + (streaming && i === blocks.length - 1 ? " cursor" : ""), md(b.text));
+      node = fmt(b.text, streaming && i === blocks.length - 1 ? "cursor" : "");
     } else if (b.type === "thinking") {
       if (!b.thinking && !b.redacted) return;
       node = el("details", "think");
       const live = streaming && i === blocks.length - 1;
       node.open = live || S.thinkOpen.has(rec.meta.id + ":" + m.timestamp + ":" + i);
-      node.innerHTML = `<summary><span class="lbl">${live ? "thinking…" : "thought"}</span><span class="usage">${b.redacted ? "(redacted)" : short(b.thinking, 80)}</span></summary><div class="body">${esc(b.thinking || "")}</div>`;
+      node.innerHTML = `<summary><span class="lbl">${live ? "thinking…" : "thought"}</span><span class="usage">${b.redacted ? "(redacted)" : short(b.thinking, 80)}</span></summary>`;
+      node.appendChild(fmt(b.thinking || "", "body"));
       node.addEventListener("toggle", () => { const k = rec.meta.id + ":" + m.timestamp + ":" + i; node.open ? S.thinkOpen.add(k) : S.thinkOpen.delete(k); });
     } else if (b.type === "toolCall") {
       node = renderToolCard(rec, b, { streaming });
@@ -321,7 +331,7 @@ function renderAssistant(rec, m, streaming) {
 function renderMessage(rec, m) {
   switch (m.role) {
     case "user": {
-      const e = el("div", "msg user"); e.textContent = textOf(m.content); return e;
+      return fmt(textOf(m.content), "msg user");
     }
     case "assistant": return renderAssistant(rec, m, false);
     case "toolResult": return null; // shown inside its tool call card
@@ -336,7 +346,8 @@ function renderMessage(rec, m) {
     }
     case "compactionSummary": case "branchSummary": {
       const d = el("details", "think");
-      d.innerHTML = `<summary>${m.role === "compactionSummary" ? "context compacted" : "branch summary"}</summary><div class="body">${esc(m.summary)}</div>`;
+      d.innerHTML = `<summary>${m.role === "compactionSummary" ? "context compacted" : "branch summary"}</summary>`;
+      d.appendChild(fmt(m.summary, "body"));
       return d;
     }
     default: return null;
@@ -466,6 +477,13 @@ $("menuBtn").onclick = () => {
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem("piws-theme", next); } catch {}
 };
+function setRaw(on) {
+  S.raw = on;
+  $("fmtBtn").textContent = on ? "TXT" : "MD";
+  try { localStorage.setItem("piws-raw", on ? "1" : "0"); } catch {}
+}
+$("fmtBtn").onclick = () => { setRaw(!S.raw); if (S.sel) fullRender(); };
+try { setRaw(localStorage.getItem("piws-raw") === "1"); } catch { setRaw(false); }
 try { const t = localStorage.getItem("piws-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 
 // ---------- toasts ----------
