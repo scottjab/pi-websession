@@ -712,7 +712,18 @@ function renderModelPicker(rec, can) {
   const key = rec.meta.id + "|" + list.join(",");
   if (sel.dataset.key !== key) {
     sel.dataset.key = key;
-    sel.innerHTML = list.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
+    // One optgroup per provider, in the order pi lists them, so a long catalog stays navigable.
+    const groups = new Map();
+    for (const m of list) {
+      const i = m.indexOf("/");
+      const prov = i > 0 ? m.slice(0, i) : "";
+      if (!groups.has(prov)) groups.set(prov, []);
+      groups.get(prov).push(m);
+    }
+    sel.innerHTML = [...groups].map(([prov, ms]) =>
+      `<optgroup label="${esc(prov || "other")}">` +
+      ms.map((m) => `<option value="${esc(m)}">${esc(m.slice(prov.length + (prov ? 1 : 0)))}</option>`).join("") +
+      "</optgroup>").join("");
   }
   sel.value = rec.meta.model || "";
 }

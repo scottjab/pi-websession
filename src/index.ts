@@ -260,7 +260,8 @@ class Publisher {
     try {
       const scoped = this.ctx.scopedModels?.map((s) => s.model) ?? [];
       const list = scoped.length ? scoped : this.ctx.modelRegistry.getAvailable();
-      const ids = [...new Set(list.map((m) => `${m.provider}/${m.id}`))].slice(0, 300);
+      // No cap: a big catalog (openrouter is ~400) would push later providers off the list.
+      const ids = [...new Set(list.map((m) => `${m.provider}/${m.id}`))];
       if (this.meta.model && !ids.includes(this.meta.model)) ids.unshift(this.meta.model);
       this.meta.models = ids;
     } catch {}
