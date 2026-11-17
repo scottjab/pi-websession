@@ -105,7 +105,7 @@ details.think .body { padding: 0 10px 8px; white-space: pre-wrap; color: var(--f
 .tool .tb { border-top: 1px solid var(--border); }
 .tool pre { margin: 0; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow-y: auto; }
 .tool pre.args { color: var(--fg2); border-bottom: 1px dashed var(--border); }
-.tool .open-child { margin: 6px 10px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--accent); background: none; color: var(--accent); font-size: 12px; }
+.tool .open-child { flex: none; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--accent); background: none; color: var(--accent); font-size: 12px; }
 .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--warn); border-right-color: transparent; border-radius: 50%; animation: rot .8s linear infinite; }
 @keyframes rot { to { transform: rotate(360deg); } }
 .cursor::after { content: "▍"; animation: pulse 1s infinite; color: var(--fg3); }
@@ -260,7 +260,10 @@ function toolResultFor(rec, id) { for (let i = rec.messages.length - 1; i >= 0; 
 function renderToolCard(rec, call, opts = {}) {
   const d = el("details", "tool");
   d.dataset.id = call.id;
+  const k = rec.meta.id + ":" + call.id;
   fillToolCard(d, rec, call, opts);
+  d.open = S.toolOpen.has(k);
+  d.addEventListener("toggle", () => { d.open ? S.toolOpen.add(k) : S.toolOpen.delete(k); });
   return d;
 }
 function fillToolCard(d, rec, call, { streaming } = {}) {
@@ -279,8 +282,10 @@ function fillToolCard(d, rec, call, { streaming } = {}) {
   if (argsJson && argsJson !== "{}") body += `<pre class="args">${esc(argsJson)}</pre>`;
   if (res) body += `<pre>${esc(textOf(res.content) || "(no output)")}</pre>`;
   else if (live?.partial) body += `<pre>${esc(live.partial)}</pre>`;
-  d.innerHTML = `<summary><span class="tn">${esc(call.name)}</span><span class="ta">${esc(argSummary(call.name, call.arguments))}</span>${status}</summary><div class="tb">${body}${kids.length ? kids.map((k) => `<button class="open-child" data-sid="${esc(k.meta.id)}">open ${esc(short(title(k), 40))}</button>`).join("") : ""}</div>`;
-  d.open = wasOpen || (!!live && live.status === "running" && !!live.partial);
+  // Child links live in the summary so they work while the card is collapsed.
+  const kidBtns = kids.map((k) => `<button class="open-child" data-sid="${esc(k.meta.id)}">open${kids.length > 1 ? " " + esc(short(title(k), 20)) : ""}</button>`).join("");
+  d.innerHTML = `<summary><span class="tn">${esc(call.name)}</span><span class="ta">${esc(argSummary(call.name, call.arguments))}</span>${kidBtns}${status}</summary><div class="tb">${body}</div>`;
+  d.open = wasOpen; // collapsed unless the user opened it
 }
 
 function renderAssistant(rec, m, streaming) {
@@ -472,6 +477,7 @@ function toast(text, level = "info") {
 
 // ---------- state sync ----------
 S.thinkOpen = new Set();
+S.toolOpen = new Set();
 function upsert(ev) {
   S.sessions.set(ev.sessionId ?? ev.meta.id, { meta: ev.meta, messages: ev.messages || [], partial: ev.partial || null, tools: new Map((ev.tools || []).map((t) => [t.toolCallId, t])) });
 }
