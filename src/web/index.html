@@ -782,7 +782,8 @@ function renderModelPicker(rec, can) {
   const list = rec?.meta.models || [];
   const levels = rec?.meta.thinkingLevels?.length ? rec.meta.thinkingLevels : FALLBACK_LEVELS;
   const showModels = can && list.length > 1;
-  const showThinking = can && !!rec?.meta.thinkingLevels?.length;
+  // Non-reasoning models report just ["off"]; a one-option picker is noise, so hide it.
+  const showThinking = can && (rec?.meta.thinkingLevels?.length ?? 0) > 1;
   box.classList.toggle("show", can);
   if (!can || !rec) return;
   if (showModels && !sel.matches(":focus")) {
