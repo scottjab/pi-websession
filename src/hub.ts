@@ -186,7 +186,8 @@ export class Hub {
       if (rec.ownerId !== id) continue;
       if (rec.meta.status === "ended") continue; // finished cleanly; its retention timer is already running
       rec.meta.status = "offline";
-      this.broadcast({ type: "meta", sessionId: sid, patch: { status: "offline" } });
+      rec.meta.updatedAt = Date.now();
+      this.broadcast({ type: "meta", sessionId: sid, patch: { status: "offline", updatedAt: rec.meta.updatedAt } });
       this.expire(sid, rec, OFFLINE_GRACE_MS, "offline");
     }
   }

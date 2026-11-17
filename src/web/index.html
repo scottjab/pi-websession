@@ -46,8 +46,15 @@ header { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 
 .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--fg3); }
 .dot.running { background: var(--ok); animation: pulse 1.2s infinite; }
 .dot.waiting_ui { background: var(--warn); }
-.dot.offline { background: var(--err); }
-.dot.ended { background: var(--ok); opacity: .45; }
+/* Hollow dots mean the session is gone: ended (finished) or offline (publisher lost). */
+.dot.offline { background: none; box-shadow: inset 0 0 0 2px var(--err); }
+.dot.ended { background: none; box-shadow: inset 0 0 0 2px var(--fg3); }
+.gone { opacity: .55; }
+.tag { flex: none; font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--fg2); }
+.tag.offline { color: var(--err); border-color: var(--err); }
+#endnote { display: none; margin: 12px auto 4px; max-width: 900px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 8px; color: var(--fg2); font-size: 13px; text-align: center; }
+#endnote.show { display: block; }
+#endnote.offline { color: var(--err); border-color: var(--err); }
 @keyframes pulse { 50% { opacity: .35; } }
 
 /* child strip */
@@ -108,7 +115,7 @@ details.think .body { padding: 0 10px 8px; white-space: pre-wrap; color: var(--f
 .tool .tb { border-top: 1px solid var(--border); }
 .tool pre { margin: 0; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow-y: auto; }
 .tool pre.args { color: var(--fg2); border-bottom: 1px dashed var(--border); }
-.tool .open-child { flex: none; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--accent); background: none; color: var(--accent); font-size: 12px; }
+.tool .open-child { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--accent); background: none; color: var(--accent); font-size: 12px; }
 .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--warn); border-right-color: transparent; border-radius: 50%; animation: rot .8s linear infinite; }
 @keyframes rot { to { transform: rotate(360deg); } }
 .cursor::after { content: "▍"; animation: pulse 1s infinite; color: var(--fg3); }
@@ -184,7 +191,7 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
   <button id="menuBtn" aria-label="Theme" title="Toggle theme">◐</button>
 </header>
 <nav id="kids"></nav>
-<main id="scroller"><div id="log"><div class="empty">Waiting for sessions…<br><small>Run <code>/web</code> in a pi session.</small></div></div></main>
+<main id="scroller"><div id="log"><div class="empty">Waiting for sessions…<br><small>Run <code>/web</code> in a pi session.</small></div></div><div id="endnote"></div></main>
 <button id="jump">↓ latest</button>
 <footer>
   <div id="ro">view only · run <code>/web control</code> in pi to allow control</div>
@@ -411,9 +418,13 @@ function title(rec) {
 function children(id) { return [...S.sessions.values()].filter((r) => r.meta.parentId === id).sort((a, b) => a.meta.startedAt - b.meta.startedAt); }
 function rootOf(rec) { let r = rec, n = 0; while (r?.meta.parentId && S.sessions.has(r.meta.parentId) && n++ < 10) r = S.sessions.get(r.meta.parentId); return r; }
 function descendants(id, depth = 1, out = []) { for (const c of children(id)) { out.push([c, depth]); descendants(c.meta.id, depth + 1, out); } return out; }
+/** False once a session ended or its publisher went away: nothing in it is still running. */
+const alive = (rec) => rec.meta.status !== "ended" && rec.meta.status !== "offline";
+const STATUS_TAG = { ended: "done", offline: "offline" };
+function statusTag(m) { return STATUS_TAG[m.status] ? `<span class="tag ${m.status}">${STATUS_TAG[m.status]}</span>` : ""; }
 function subText(m) {
   const bits = [];
-  bits.push({ running: "working", waiting_ui: "waiting on terminal", ended: "done" }[m.status] || m.status);
+  bits.push({ running: "working", waiting_ui: "waiting on terminal", ended: "done", offline: "offline (disconnected)" }[m.status] || m.status);
   if (m.model) bits.push(m.model.split("/").pop());
   if (m.contextPercent != null) bits.push(`ctx ${m.contextPercent}%`);
   if (m.usage?.cost) bits.push(`$${m.usage.cost.toFixed(2)}`);
@@ -459,6 +470,7 @@ function fillToolCard(d, rec, call, opts = {}) {
   const dur = res?.durationMs ?? live?.durationMs;
   let status;
   if (res) status = res.isError ? `<span class="ts err">${exit ? "exit " + esc(exit) : "error"}</span>` : '<span class="ts ok">✓</span>';
+  else if (!alive(rec)) status = `<span class="ts dim">${rec.meta.status === "offline" ? "lost" : "stopped"}</span>`;
   else if (live?.status === "running" || (!streaming && rec.meta.status === "running")) status = `<span class="ts run"><span class="spin"></span></span>`;
   else if (streaming) status = '<span class="ts">…</span>';
   else status = '<span class="ts">–</span>';
@@ -471,7 +483,7 @@ function fillToolCard(d, rec, call, opts = {}) {
   const diff = name === "edit" ? (res?.diff ?? (Array.isArray(a.edits) ? argsDiff(a.edits) : "")) : "";
   if (diff) { const c = diffCounts(diff); ta += ` <span class="add">+${c.a}</span> <span class="del">−${c.d}</span>`; }
   if (name === "write" && typeof a.content === "string") ta += ` <span class="dim">${a.content.split("\n").length} lines</span>`;
-  const kidBtns = kids.map((k) => `<button class="open-child" data-sid="${esc(k.meta.id)}">open${kids.length > 1 ? " " + esc(short(title(k), 20)) : ""}</button>`).join("");
+  const kidBtns = kids.map((k) => `<button class="open-child" data-sid="${esc(k.meta.id)}" title="${esc(subText(k.meta))}"><span class="dot ${k.meta.status}"></span>open${kids.length > 1 ? " " + esc(short(title(k), 20)) : ""}</button>`).join("");
   const durHtml = dur != null && res ? `<span class="ts dim">${fmtDur(dur)}</span>` : "";
   const summary = el("summary", "", `<span class="tn">${esc(call.name)}</span><span class="ta">${ta}</span>${kidBtns}${durHtml}${status}`);
   const tb = el("div", "tb");
@@ -504,8 +516,8 @@ function fillToolCard(d, rec, call, opts = {}) {
 function kidResult(k) {
   const box = el("div", "kidres");
   const last = [...k.messages].reverse().find((m) => m.role === "assistant" && textOf(m.content).trim());
-  const done = k.meta.status === "ended" || k.meta.status === "idle";
-  box.appendChild(el("div", "h", `${esc(short(title(k), 50))} · ${done ? "result" : "latest"}`));
+  const label = { ended: "finished · result", offline: "disconnected · last answer", idle: "idle · result" }[k.meta.status] || "working · latest";
+  box.appendChild(el("div", "h", `${esc(short(title(k), 50))} · ${label}`));
   box.appendChild(last ? fmt(textOf(last.content).slice(0, 20000)) : el("div", "usage", "no answer yet"));
   return box;
 }
@@ -607,7 +619,7 @@ function fullRender() {
 
 function renderPartial(rec) {
   if (R?.sid !== rec.meta.id) return;
-  const next = rec.partial ? renderAssistant(rec, rec.partial, true) : null;
+  const next = rec.partial ? renderAssistant(rec, rec.partial, alive(rec)) : null;
   if (R.partialEl) { next ? R.partialEl.replaceWith(next) : R.partialEl.remove(); }
   else if (next) logEl.appendChild(next);
   R.partialEl = next;
@@ -646,19 +658,25 @@ function renderChrome() {
     $("sessTitle").textContent = title(rec);
     $("sessSub").textContent = subText(rec.meta);
     $("sessDot").className = "dot " + rec.meta.status;
-    document.title = (rec.meta.status === "running" ? "● " : "") + title(rec) + " · pi";
+    document.title = (rec.meta.status === "running" ? "● " : rec.meta.status === "ended" ? "✓ " : "") + title(rec) + " · pi";
   } else {
     $("sessTitle").textContent = "pi web";
     $("sessSub").textContent = S.connected ? `${S.sessions.size} session(s)` : "connecting…";
     $("sessDot").className = "dot";
   }
+  const note = $("endnote");
+  const gone = rec && !alive(rec);
+  note.className = gone ? "show " + rec.meta.status : "";
+  note.textContent = !gone ? "" : rec.meta.status === "ended"
+    ? `${rec.meta.kind === "subagent" ? "Subagent" : "Session"} finished ${ago(rec.meta.updatedAt)}.`
+    : `Publisher disconnected ${ago(rec.meta.updatedAt)}. This session isn't running anymore (it may come back if pi reconnects).`;
   // child strip: siblings within the selected session's root tree
   const kids = $("kids");
   const root = rec ? rootOf(rec) : null;
   const tree = root ? descendants(root.meta.id) : [];
   if (root && tree.length) {
     kids.classList.add("show");
-    kids.innerHTML = [[root, 0], ...tree].map(([r]) => `<button class="chip${r.meta.id === S.sel ? " sel" : ""}" data-sid="${esc(r.meta.id)}"><span class="dot ${r.meta.status}"></span><span>${esc(r === root ? "main" : short(title(r), 32))}</span></button>`).join("");
+    kids.innerHTML = [[root, 0], ...tree].map(([r]) => `<button class="chip${r.meta.id === S.sel ? " sel" : ""}${alive(r) ? "" : " gone"}" data-sid="${esc(r.meta.id)}" title="${esc(subText(r.meta))}"><span class="dot ${r.meta.status}"></span><span>${esc(r === root ? "main" : short(title(r), 32))}</span>${statusTag(r.meta)}</button>`).join("");
   } else kids.classList.remove("show");
   // composer
   const can = !!rec?.meta.controllable && rec.meta.status !== "offline" && rec.meta.status !== "ended";
@@ -679,7 +697,7 @@ function renderDrawer() {
   for (const r of roots) {
     const rows = [[r, 0], ...descendants(r.meta.id)];
     for (const [s, d] of rows) {
-      h += `<button class="srow${d ? " child" : ""}${d > 1 ? " d2" : ""}${s.meta.id === S.sel ? " sel" : ""}" data-sid="${esc(s.meta.id)}"><span class="dot ${s.meta.status}"></span><span class="t"><div class="n">${esc(title(s))}</div><div class="m">${esc(subText(s.meta))} · ${ago(s.meta.updatedAt)}${d === 0 && s.meta.cwd ? " · " + esc(s.meta.cwd) : ""}</div></span>${s.meta.controllable ? "<span title='controllable'>⌨</span>" : ""}</button>`;
+      h += `<button class="srow${d ? " child" : ""}${d > 1 ? " d2" : ""}${s.meta.id === S.sel ? " sel" : ""}${alive(s) ? "" : " gone"}" data-sid="${esc(s.meta.id)}"><span class="dot ${s.meta.status}"></span><span class="t"><div class="n">${esc(title(s))}</div><div class="m">${esc(subText(s.meta))} · ${ago(s.meta.updatedAt)}${d === 0 && s.meta.cwd ? " · " + esc(s.meta.cwd) : ""}</div></span>${statusTag(s.meta)}${s.meta.controllable && alive(s) ? "<span title='controllable'>⌨</span>" : ""}</button>`;
     }
   }
   p.innerHTML = h;
@@ -795,9 +813,12 @@ function apply(ev) {
   switch (ev.type) {
     case "meta":
       Object.assign(rec.meta, ev.patch);
+      if (ev.patch.status === "ended") rec.partial = null; // the hub drops it too
+      if (ev.patch.status) queuePartial(rec);
       queueChrome();
       if (ev.patch.status && rec.meta.parentId) refreshKidCards(rec.meta.parentId);
-      if (ev.patch.status && rec.partial == null && R?.sid === rec.meta.id) for (const id of rec.tools.keys()) refreshToolCards(rec, id);
+      // Status flips spinners on or off in every card without a result, not just tracked tools.
+      if (ev.patch.status && R?.sid === rec.meta.id) for (const d of logEl.querySelectorAll("details.tool[data-id]")) if (!toolResultFor(rec, d.dataset.id)) refreshToolCards(rec, d.dataset.id);
       break;
     case "message":
       rec.messages.push(ev.message);

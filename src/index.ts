@@ -178,7 +178,27 @@ class Publisher {
     this.emit({ type: "meta", sessionId: this.id, patch: { controllable: on } });
   }
 
+  /**
+   * False once pi disposed this session. In-process subagents are disposed
+   * with AgentSession.dispose(), which never fires session_shutdown, so the
+   * only sign is that the ctx turns stale and its accessors throw.
+   */
+  private ctxAlive(): boolean {
+    try {
+      this.ctx.isIdle();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private checkConsent(): void {
+    if (!this.ctxAlive()) {
+      debug("session disposed without shutdown", this.id);
+      this.stop(this.meta.kind === "subagent" ? "ended" : "remove");
+      this.onRevoked();
+      return;
+    }
     const root = this.meta.kind === "main" && this.shareRootKey === shareKey(this.ctx) ? { entry: readShares()[this.shareRootKey] } : findSharedRoot(this.meta.file, this.meta.parentFile);
     if (!root?.entry) {
       this.stop();
@@ -400,7 +420,11 @@ export default function websession(pi: ExtensionAPI) {
 
   const updateStatus = async () => {
     const ctx = ctxRef;
-    if (!ctx?.hasUI) return;
+    try {
+      if (!ctx?.hasUI) return;
+    } catch {
+      return; // stale ctx: the session was disposed
+    }
     if (!pub) {
       ctx.ui.setStatus(STATUS_KEY, undefined);
       return;
