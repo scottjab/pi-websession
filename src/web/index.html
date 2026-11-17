@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232563eb'/><text x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='serif'>π</text></svg>">
+<title>pi web</title>
+<style>
+:root {
+  --bg: #ffffff; --bg2: #f5f6f8; --bg3: #eceef2; --fg: #1b1f24; --fg2: #57606a; --fg3: #8b949e;
+  --border: #d8dde3; --accent: #2563eb; --accent-fg: #fff; --user: #e8f0fe; --ok: #1a7f37; --warn: #b7791f; --err: #cf222e;
+  --think: #f6f1ff; --think-border: #c9b6f2; --code: #f3f4f6; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --fg: #e6edf3; --fg2: #9da7b3; --fg3: #6e7681;
+    --border: #30363d; --accent: #4c8dff; --user: #172a4a; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+    --think: #1d1730; --think-border: #4b3a78; --code: #161b22;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --fg: #e6edf3; --fg2: #9da7b3; --fg3: #6e7681;
+  --border: #30363d; --accent: #4c8dff; --user: #172a4a; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+  --think: #1d1730; --think-border: #4b3a78; --code: #161b22;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; display: flex; flex-direction: column; overflow: hidden; }
+button { font: inherit; color: inherit; cursor: pointer; }
+code, pre { font-family: var(--mono); font-size: 13px; }
+
+/* header */
+header { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--bg2); }
+#sessBtn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; background: none; border: 0; padding: 4px 0; text-align: left; }
+#sessTitle { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sessSub { color: var(--fg2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.titlewrap { min-width: 0; display: flex; flex-direction: column; }
+#conn { font-size: 12px; color: var(--fg3); white-space: nowrap; }
+#conn.live { color: var(--ok); }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--fg3); }
+.dot.running { background: var(--ok); animation: pulse 1.2s infinite; }
+.dot.waiting_ui { background: var(--warn); }
+.dot.offline { background: var(--err); }
+.dot.ended { background: var(--ok); opacity: .45; }
+@keyframes pulse { 50% { opacity: .35; } }
+
+/* child strip */
+#kids { flex: none; display: none; gap: 6px; padding: 6px 12px; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--bg); scrollbar-width: none; }
+#kids.show { display: flex; }
+.chip { flex: none; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg2); font-size: 13px; max-width: 220px; }
+.chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip.sel { border-color: var(--accent); background: var(--user); }
+
+/* drawer */
+#drawer { position: fixed; inset: 0; z-index: 20; display: none; }
+#drawer.open { display: block; }
+#drawer .scrim { position: absolute; inset: 0; background: #0008; }
+#drawer .panel { position: absolute; top: 0; left: 0; bottom: 0; width: min(380px, 88vw); background: var(--bg); border-right: 1px solid var(--border); overflow-y: auto; padding-top: env(safe-area-inset-top); }
+#drawer h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--fg3); margin: 14px 16px 6px; }
+.srow { display: flex; gap: 10px; align-items: center; width: 100%; padding: 10px 16px; background: none; border: 0; border-bottom: 1px solid var(--bg3); text-align: left; }
+.srow.child { padding-left: 34px; }
+.srow.child.d2 { padding-left: 52px; }
+.srow.sel { background: var(--user); }
+.srow .t { flex: 1; min-width: 0; }
+.srow .n { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srow .m { font-size: 12px; color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.empty { padding: 40px 20px; text-align: center; color: var(--fg2); }
+
+/* transcript */
+main { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 12px 12px 24px; -webkit-overflow-scrolling: touch; }
+#log { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.msg { min-width: 0; overflow-wrap: anywhere; }
+.msg.user { align-self: flex-end; max-width: 88%; background: var(--user); padding: 8px 12px; border-radius: 14px 14px 4px 14px; white-space: pre-wrap; }
+.msg.assistant { display: flex; flex-direction: column; gap: 8px; }
+.msg.meta { color: var(--fg3); font-size: 12px; text-align: center; }
+.msg.err { color: var(--err); font-size: 13px; }
+.msg.custom, .msg.summary { font-size: 13px; color: var(--fg2); border-left: 3px solid var(--border); padding: 2px 10px; white-space: pre-wrap; }
+.md p { margin: 0 0 .6em; } .md p:last-child { margin-bottom: 0; }
+.md pre { background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; overflow-x: auto; margin: .4em 0; }
+.md code { background: var(--code); padding: 1px 4px; border-radius: 4px; }
+.md pre code { background: none; padding: 0; }
+.md h1, .md h2, .md h3, .md h4 { font-size: 1.05em; margin: .8em 0 .3em; }
+.md ul, .md ol { margin: .3em 0 .6em; padding-left: 1.4em; }
+.md a { color: var(--accent); }
+.md blockquote { margin: .4em 0; padding-left: 10px; border-left: 3px solid var(--border); color: var(--fg2); }
+.md table { border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
+.md td, .md th { border: 1px solid var(--border); padding: 3px 6px; }
+
+details.think { background: var(--think); border: 1px solid var(--think-border); border-radius: 8px; font-size: 13.5px; }
+details.think > summary { cursor: pointer; padding: 6px 10px; color: var(--fg2); list-style: none; display: flex; gap: 6px; }
+details.think > summary .lbl { flex: none; }
+details.think > summary .usage { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; align-self: center; }
+details.think > summary::before { content: "▸"; } details.think[open] > summary::before { content: "▾"; }
+details.think .body { padding: 0 10px 8px; white-space: pre-wrap; color: var(--fg2); max-height: 60vh; overflow-y: auto; }
+
+.tool { border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); font-size: 13px; overflow: hidden; }
+.tool > summary { cursor: pointer; padding: 7px 10px; display: flex; align-items: center; gap: 8px; list-style: none; }
+.tool .tn { font-weight: 600; font-family: var(--mono); flex: none; }
+.tool .ta { flex: 1; min-width: 0; color: var(--fg2); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool .ts { flex: none; font-size: 12px; color: var(--fg3); }
+.tool .ts.err { color: var(--err); } .tool .ts.ok { color: var(--ok); } .tool .ts.run { color: var(--warn); }
+.tool .tb { border-top: 1px solid var(--border); }
+.tool pre { margin: 0; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow-y: auto; }
+.tool pre.args { color: var(--fg2); border-bottom: 1px dashed var(--border); }
+.tool .open-child { margin: 6px 10px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--accent); background: none; color: var(--accent); font-size: 12px; }
+.spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--warn); border-right-color: transparent; border-radius: 50%; animation: rot .8s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+.cursor::after { content: "▍"; animation: pulse 1s infinite; color: var(--fg3); }
+.usage { font-size: 11px; color: var(--fg3); }
+
+#jump { position: fixed; right: 16px; bottom: 90px; z-index: 5; display: none; border: 1px solid var(--border); background: var(--bg2); border-radius: 999px; padding: 6px 12px; font-size: 13px; box-shadow: 0 2px 8px #0003; }
+#jump.show { display: block; }
+#more { align-self: center; border: 1px solid var(--border); background: var(--bg2); border-radius: 6px; padding: 4px 12px; font-size: 13px; }
+
+/* composer */
+footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2); padding: 8px 10px; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+#ro { color: var(--fg3); font-size: 12px; text-align: center; padding: 2px; }
+#composer { display: none; gap: 8px; align-items: flex-end; max-width: 900px; margin: 0 auto; }
+#composer.show { display: flex; }
+#input { flex: 1; resize: none; min-height: 40px; max-height: 40vh; font: inherit; font-size: 16px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); }
+.btn { border: 0; border-radius: 10px; padding: 0 14px; height: 40px; background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.btn.sec { background: var(--bg3); color: var(--fg); }
+.btn.danger { background: var(--err); color: #fff; }
+#mode { height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; padding: 0 4px; }
+.hide { display: none !important; }
+#toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: 96px; z-index: 30; display: flex; flex-direction: column; gap: 6px; width: min(420px, 92vw); pointer-events: none; }
+.toast { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; box-shadow: 0 2px 10px #0004; }
+.toast.error { border-color: var(--err); } .toast.warning { border-color: var(--warn); }
+#menuBtn { background: none; border: 0; font-size: 20px; padding: 0 4px; color: var(--fg2); }
+</style>
+</head>
+<body>
+<header>
+  <button id="sessBtn" aria-label="Sessions">
+    <span class="dot" id="sessDot"></span>
+    <span class="titlewrap"><span id="sessTitle">pi web</span><span id="sessSub">connecting…</span></span>
+  </button>
+  <span id="conn">offline</span>
+  <button id="menuBtn" aria-label="Theme" title="Toggle theme">◐</button>
+</header>
+<nav id="kids"></nav>
+<main id="scroller"><div id="log"><div class="empty">Waiting for sessions…<br><small>Run <code>/web</code> in a pi session.</small></div></div></main>
+<button id="jump">↓ latest</button>
+<footer>
+  <div id="ro">view only · run <code>/web control</code> in pi to allow control</div>
+  <div id="composer">
+    <textarea id="input" rows="1" placeholder="Message pi…" enterkeyhint="send"></textarea>
+    <select id="mode" class="hide" title="While busy"><option value="steer">steer</option><option value="followUp">after</option></select>
+    <button class="btn danger hide" id="abort" title="Abort">■</button>
+    <button class="btn" id="send">Send</button>
+  </div>
+</footer>
+<div id="drawer"><div class="scrim"></div><div class="panel" id="drawerPanel"></div></div>
+<div id="toasts"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const S = { sessions: new Map(), sel: null, connected: false, rendered: null, limit: 250 };
+// Per-session render cache: { msgEls: [], partialEl, toolEls: Map(id -> el), count }
+let R = null;
+
+// ---------- utils ----------
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const textOf = (c) => typeof c === "string" ? c : Array.isArray(c) ? c.map((b) => b.type === "text" ? b.text : b.type === "image" ? "[image]" : "").join("") : "";
+const short = (s, n) => { s = String(s ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+const fmtDur = (ms) => ms == null ? "" : ms < 1000 ? ms + "ms" : ms < 60000 ? (ms / 1000).toFixed(1) + "s" : Math.floor(ms / 60000) + "m" + Math.round(ms % 60000 / 1000) + "s";
+const fmtTok = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n ?? 0);
+const base = (p) => String(p || "").split("/").filter(Boolean).pop() || p || "";
+
+function md(src) {
+  // Small, safe markdown: escape first, then add structure.
+  const blocks = [];
+  let s = String(src ?? "").replace(/```([\w+-]*)\n?([\s\S]*?)(```|$)/g, (_, lang, code) => { blocks.push(`<pre><code>${esc(code.replace(/\n$/, ""))}</code></pre>`); return `\u0000${blocks.length - 1}\u0000`; });
+  s = esc(s);
+  const inline = (t) => t
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>")
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, "$1<i>$2</i>")
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  const out = [];
+  let list = null, para = [], table = null;
+  const flushPara = () => { if (para.length) { out.push(`<p>${inline(para.join("<br>"))}</p>`); para = []; } };
+  const flushList = () => { if (list) { out.push(`<${list.t}>${list.items.map((i) => `<li>${inline(i)}</li>`).join("")}</${list.t}>`); list = null; } };
+  const flushTable = () => { if (table) { out.push(`<table>${table.map((r, i) => `<tr>${r.map((c) => i === 0 ? `<th>${inline(c)}</th>` : `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</table>`); table = null; } };
+  const flush = () => { flushPara(); flushList(); flushTable(); };
+  for (const line of s.split("\n")) {
+    let m;
+    if ((m = line.match(/^\u0000(\d+)\u0000$/))) { flush(); out.push(blocks[+m[1]]); continue; }
+    if (/^\s*$/.test(line)) { flush(); continue; }
+    if ((m = line.match(/^(#{1,6})\s+(.*)$/))) { flush(); out.push(`<h${Math.min(m[1].length + 1, 4)}>${inline(m[2])}</h${Math.min(m[1].length + 1, 4)}>`); continue; }
+    if ((m = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/))) { flushPara(); flushTable(); const t = /\d/.test(m[1]) ? "ol" : "ul"; if (!list || list.t !== t) { flushList(); list = { t, items: [] }; } list.items.push(m[2]); continue; }
+    if ((m = line.match(/^&gt;\s?(.*)$/))) { flush(); out.push(`<blockquote>${inline(m[1])}</blockquote>`); continue; }
+    if (/^\s*\|.*\|\s*$/.test(line)) { flushPara(); flushList(); if (/^\s*\|[\s:|-]+\|\s*$/.test(line)) continue; (table ??= []).push(line.trim().slice(1, -1).split("|").map((c) => c.trim())); continue; }
+    if (list && /^\s{2,}\S/.test(line)) { list.items[list.items.length - 1] += " " + line.trim(); continue; }
+    flushList(); flushTable(); para.push(line);
+  }
+  flush();
+  return out.join("").replace(/\u0000(\d+)\u0000/g, (_, i) => blocks[+i]);
+}
+
+function argSummary(name, a) {
+  if (!a || typeof a !== "object") return "";
+  if (a._truncated) return short(a._truncated, 160);
+  const n = String(name).toLowerCase();
+  if (n === "bash" || a.command) return a.command ?? "";
+  if (a.path || a.file_path) return (a.path || a.file_path) + (a.offset ? `:${a.offset}` : "");
+  if (a.pattern) return `${a.pattern}${a.path ? "  in " + a.path : ""}`;
+  if (n === "subagent") {
+    if (a.agent) return `${a.agent}: ${short(a.task ?? "", 120)}`;
+    if (Array.isArray(a.tasks)) return a.tasks.map((t) => t.agent).join(", ");
+    if (Array.isArray(a.chain)) return a.chain.map((t) => t.agent).join(" → ");
+    if (a.action) return a.action;
+  }
+  if (a.url) return a.url;
+  if (a.query) return a.query;
+  try { return short(JSON.stringify(a), 160); } catch { return ""; }
+}
+
+// ---------- session helpers ----------
+function title(rec) {
+  const m = rec.meta;
+  if (m.name) return m.name;
+  if (m.kind === "subagent") {
+    const first = rec.messages.find((x) => x.role === "user");
+    return (m.label ? m.label + " · " : "") + (first ? short(textOf(first.content), 60) : "subagent");
+  }
+  return base(m.cwd) || m.id.slice(0, 8);
+}
+function children(id) { return [...S.sessions.values()].filter((r) => r.meta.parentId === id).sort((a, b) => a.meta.startedAt - b.meta.startedAt); }
+function rootOf(rec) { let r = rec, n = 0; while (r?.meta.parentId && S.sessions.has(r.meta.parentId) && n++ < 10) r = S.sessions.get(r.meta.parentId); return r; }
+function descendants(id, depth = 1, out = []) { for (const c of children(id)) { out.push([c, depth]); descendants(c.meta.id, depth + 1, out); } return out; }
+function subText(m) {
+  const bits = [];
+  bits.push({ running: "working", waiting_ui: "waiting on terminal", ended: "done" }[m.status] || m.status);
+  if (m.model) bits.push(m.model.split("/").pop());
+  if (m.contextPercent != null) bits.push(`ctx ${m.contextPercent}%`);
+  if (m.usage?.cost) bits.push(`$${m.usage.cost.toFixed(2)}`);
+  return bits.join(" · ");
+}
+
+// ---------- rendering ----------
+const scroller = $("scroller");
+const logEl = $("log");
+let stick = true;
+scroller.addEventListener("scroll", () => {
+  stick = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
+  $("jump").classList.toggle("show", !stick);
+}, { passive: true });
+$("jump").onclick = () => { stick = true; scroller.scrollTop = scroller.scrollHeight; };
+const toBottom = () => { if (stick) requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; }); };
+
+function toolResultFor(rec, id) { for (let i = rec.messages.length - 1; i >= 0; i--) { const m = rec.messages[i]; if (m.role === "toolResult" && m.toolCallId === id) return m; } return null; }
+
+function renderToolCard(rec, call, opts = {}) {
+  const d = el("details", "tool");
+  d.dataset.id = call.id;
+  fillToolCard(d, rec, call, opts);
+  return d;
+}
+function fillToolCard(d, rec, call, { streaming } = {}) {
+  const res = toolResultFor(rec, call.id);
+  const live = rec.tools.get(call.id);
+  let status;
+  if (res) status = res.isError ? '<span class="ts err">error</span>' : '<span class="ts ok">✓</span>';
+  else if (live?.status === "running") status = `<span class="ts run"><span class="spin"></span></span>`;
+  else if (streaming) status = '<span class="ts">…</span>';
+  else if (rec.meta.status === "running") status = `<span class="ts run"><span class="spin"></span></span>`;
+  else status = '<span class="ts">–</span>';
+  const wasOpen = d.open;
+  const kids = call.name === "subagent" ? children(rec.meta.id) : [];
+  let body = "";
+  const argsJson = (() => { try { return JSON.stringify(call.arguments, null, 2); } catch { return ""; } })();
+  if (argsJson && argsJson !== "{}") body += `<pre class="args">${esc(argsJson)}</pre>`;
+  if (res) body += `<pre>${esc(textOf(res.content) || "(no output)")}</pre>`;
+  else if (live?.partial) body += `<pre>${esc(live.partial)}</pre>`;
+  d.innerHTML = `<summary><span class="tn">${esc(call.name)}</span><span class="ta">${esc(argSummary(call.name, call.arguments))}</span>${status}</summary><div class="tb">${body}${kids.length ? kids.map((k) => `<button class="open-child" data-sid="${esc(k.meta.id)}">open ${esc(short(title(k), 40))}</button>`).join("") : ""}</div>`;
+  d.open = wasOpen || (!!live && live.status === "running" && !!live.partial);
+}
+
+function renderAssistant(rec, m, streaming) {
+  const wrap = el("div", "msg assistant");
+  const blocks = m.content || [];
+  blocks.forEach((b, i) => {
+    let node;
+    if (b.type === "text") {
+      if (!b.text) return;
+      node = el("div", "md" + (streaming && i === blocks.length - 1 ? " cursor" : ""), md(b.text));
+    } else if (b.type === "thinking") {
+      if (!b.thinking && !b.redacted) return;
+      node = el("details", "think");
+      const live = streaming && i === blocks.length - 1;
+      node.open = live || S.thinkOpen.has(rec.meta.id + ":" + m.timestamp + ":" + i);
+      node.innerHTML = `<summary><span class="lbl">${live ? "thinking…" : "thought"}</span><span class="usage">${b.redacted ? "(redacted)" : short(b.thinking, 80)}</span></summary><div class="body">${esc(b.thinking || "")}</div>`;
+      node.addEventListener("toggle", () => { const k = rec.meta.id + ":" + m.timestamp + ":" + i; node.open ? S.thinkOpen.add(k) : S.thinkOpen.delete(k); });
+    } else if (b.type === "toolCall") {
+      node = renderToolCard(rec, b, { streaming });
+    } else return;
+    node.dataset.idx = i;
+    wrap.appendChild(node);
+  });
+  if (m.stopReason === "error" && m.errorMessage) wrap.appendChild(el("div", "msg err", esc(m.errorMessage)));
+  if (m.stopReason === "aborted") wrap.appendChild(el("div", "msg meta", "aborted"));
+  if (!streaming && m.usage && (m.usage.input || m.usage.output)) {
+    wrap.appendChild(el("div", "usage", `${esc((m.model || "").split("/").pop())} · ${fmtTok(m.usage.input)} in · ${fmtTok(m.usage.output)} out${m.usage.cost ? ` · $${m.usage.cost.toFixed(4)}` : ""}`));
+  }
+  if (streaming && !wrap.childElementCount) wrap.appendChild(el("div", "md cursor", ""));
+  return wrap;
+}
+
+function renderMessage(rec, m) {
+  switch (m.role) {
+    case "user": {
+      const e = el("div", "msg user"); e.textContent = textOf(m.content); return e;
+    }
+    case "assistant": return renderAssistant(rec, m, false);
+    case "toolResult": return null; // shown inside its tool call card
+    case "bashExecution": {
+      const d = el("details", "tool");
+      d.innerHTML = `<summary><span class="tn">!</span><span class="ta">${esc(m.command)}</span><span class="ts">${m.exitCode ?? ""}</span></summary><div class="tb"><pre>${esc(m.output)}</pre></div>`;
+      return d;
+    }
+    case "custom": {
+      if (m.display === false) return null;
+      const e = el("div", "msg custom"); e.textContent = `[${m.customType}] ${short(textOf(m.content), 600)}`; return e;
+    }
+    case "compactionSummary": case "branchSummary": {
+      const d = el("details", "think");
+      d.innerHTML = `<summary>${m.role === "compactionSummary" ? "context compacted" : "branch summary"}</summary><div class="body">${esc(m.summary)}</div>`;
+      return d;
+    }
+    default: return null;
+  }
+}
+
+function fullRender() {
+  const rec = S.sessions.get(S.sel);
+  R = { sid: S.sel, partialEl: null };
+  logEl.innerHTML = "";
+  if (!rec) {
+    logEl.innerHTML = S.sessions.size ? '<div class="empty">Pick a session.</div>' : '<div class="empty">No shared sessions yet.<br><small>Run <code>/web</code> in a pi session.</small></div>';
+    renderChrome();
+    return;
+  }
+  const start = Math.max(0, rec.messages.length - S.limit);
+  if (start > 0) {
+    const b = el("button", "", `show ${Math.min(start, 250)} earlier`); b.id = "more";
+    b.onclick = () => { S.limit += 250; const h = scroller.scrollHeight; fullRender(); scroller.scrollTop = scroller.scrollHeight - h; };
+    logEl.appendChild(b);
+  }
+  const frag = document.createDocumentFragment();
+  for (let i = start; i < rec.messages.length; i++) { const e = renderMessage(rec, rec.messages[i]); if (e) frag.appendChild(e); }
+  logEl.appendChild(frag);
+  renderPartial(rec);
+  renderChrome();
+  stick = true; toBottom();
+}
+
+function renderPartial(rec) {
+  if (R?.sid !== rec.meta.id) return;
+  const next = rec.partial ? renderAssistant(rec, rec.partial, true) : null;
+  if (R.partialEl) { next ? R.partialEl.replaceWith(next) : R.partialEl.remove(); }
+  else if (next) logEl.appendChild(next);
+  R.partialEl = next;
+  toBottom();
+}
+
+function appendMessage(rec, m) {
+  if (R?.sid !== rec.meta.id) return;
+  if (m.role === "toolResult") { refreshToolCards(rec, m.toolCallId); return; }
+  const e = renderMessage(rec, m);
+  if (R.partialEl && m.role === "assistant") { R.partialEl.remove(); R.partialEl = null; }
+  if (e) { R.partialEl ? logEl.insertBefore(e, R.partialEl) : logEl.appendChild(e); }
+  toBottom();
+}
+
+function refreshToolCards(rec, id) {
+  if (R?.sid !== rec.meta.id) return;
+  for (const d of logEl.querySelectorAll(`details.tool[data-id="${CSS.escape(id)}"]`)) {
+    const call = findCall(rec, id);
+    if (call) fillToolCard(d, rec, call, { streaming: d.closest(".msg") === R.partialEl });
+  }
+  toBottom();
+}
+function findCall(rec, id) {
+  const scan = (m) => (m?.content || []).find?.((b) => b.type === "toolCall" && b.id === id);
+  if (rec.partial) { const c = scan(rec.partial); if (c) return c; }
+  for (let i = rec.messages.length - 1; i >= 0; i--) { if (rec.messages[i].role === "assistant") { const c = scan(rec.messages[i]); if (c) return c; } }
+  return null;
+}
+
+function renderChrome() {
+  const rec = S.sessions.get(S.sel);
+  $("conn").textContent = S.connected ? "live" : "offline";
+  $("conn").className = S.connected ? "live" : "";
+  if (rec) {
+    $("sessTitle").textContent = title(rec);
+    $("sessSub").textContent = subText(rec.meta);
+    $("sessDot").className = "dot " + rec.meta.status;
+    document.title = (rec.meta.status === "running" ? "● " : "") + title(rec) + " · pi";
+  } else {
+    $("sessTitle").textContent = "pi web";
+    $("sessSub").textContent = S.connected ? `${S.sessions.size} session(s)` : "connecting…";
+    $("sessDot").className = "dot";
+  }
+  // child strip: siblings within the selected session's root tree
+  const kids = $("kids");
+  const root = rec ? rootOf(rec) : null;
+  const tree = root ? descendants(root.meta.id) : [];
+  if (root && tree.length) {
+    kids.classList.add("show");
+    kids.innerHTML = [[root, 0], ...tree].map(([r]) => `<button class="chip${r.meta.id === S.sel ? " sel" : ""}" data-sid="${esc(r.meta.id)}"><span class="dot ${r.meta.status}"></span><span>${esc(r === root ? "main" : short(title(r), 32))}</span></button>`).join("");
+  } else kids.classList.remove("show");
+  // composer
+  const can = !!rec?.meta.controllable && rec.meta.status !== "offline" && rec.meta.status !== "ended";
+  $("composer").classList.toggle("show", can);
+  $("ro").classList.toggle("hide", can || !rec);
+  const busy = rec?.meta.status === "running" || rec?.meta.status === "waiting_ui";
+  $("abort").classList.toggle("hide", !busy);
+  $("mode").classList.toggle("hide", !busy);
+  $("send").textContent = busy ? "Queue" : "Send";
+  if ($("drawer").classList.contains("open")) renderDrawer();
+}
+
+function renderDrawer() {
+  const p = $("drawerPanel");
+  const roots = [...S.sessions.values()].filter((r) => !r.meta.parentId || !S.sessions.has(r.meta.parentId)).sort((a, b) => b.meta.updatedAt - a.meta.updatedAt);
+  if (!roots.length) { p.innerHTML = '<div class="empty">No shared sessions.</div>'; return; }
+  let h = "<h2>Sessions</h2>";
+  for (const r of roots) {
+    const rows = [[r, 0], ...descendants(r.meta.id)];
+    for (const [s, d] of rows) {
+      h += `<button class="srow${d ? " child" : ""}${d > 1 ? " d2" : ""}${s.meta.id === S.sel ? " sel" : ""}" data-sid="${esc(s.meta.id)}"><span class="dot ${s.meta.status}"></span><span class="t"><div class="n">${esc(title(s))}</div><div class="m">${esc(subText(s.meta))}${d === 0 && s.meta.cwd ? " · " + esc(s.meta.cwd) : ""}</div></span>${s.meta.controllable ? "<span title='controllable'>⌨</span>" : ""}</button>`;
+    }
+  }
+  p.innerHTML = h;
+}
+
+function select(sid) {
+  if (!S.sessions.has(sid)) return;
+  S.sel = sid; S.limit = 250;
+  history.replaceState(null, "", "#" + sid);
+  $("drawer").classList.remove("open");
+  fullRender();
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-sid]");
+  if (b) { e.preventDefault(); select(b.dataset.sid); }
+});
+$("sessBtn").onclick = () => { renderDrawer(); $("drawer").classList.add("open"); };
+$("drawer").querySelector(".scrim").onclick = () => $("drawer").classList.remove("open");
+$("menuBtn").onclick = () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("piws-theme", next); } catch {}
+};
+try { const t = localStorage.getItem("piws-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+
+// ---------- toasts ----------
+function toast(text, level = "info") {
+  const t = el("div", "toast " + level); t.textContent = text;
+  $("toasts").appendChild(t);
+  setTimeout(() => t.remove(), level === "error" ? 6000 : 2500);
+}
+
+// ---------- state sync ----------
+S.thinkOpen = new Set();
+function upsert(ev) {
+  S.sessions.set(ev.sessionId ?? ev.meta.id, { meta: ev.meta, messages: ev.messages || [], partial: ev.partial || null, tools: new Map((ev.tools || []).map((t) => [t.toolCallId, t])) });
+}
+function pickDefault() {
+  if (S.sel && S.sessions.has(S.sel)) return;
+  const want = decodeURIComponent(location.hash.slice(1));
+  if (want && S.sessions.has(want)) { S.sel = want; return; }
+  const roots = [...S.sessions.values()].filter((r) => r.meta.kind === "main").sort((a, b) => b.meta.updatedAt - a.meta.updatedAt);
+  S.sel = (roots[0] || [...S.sessions.values()][0])?.meta.id ?? null;
+}
+
+let chromeQueued = false;
+const queueChrome = () => { if (!chromeQueued) { chromeQueued = true; requestAnimationFrame(() => { chromeQueued = false; renderChrome(); }); } };
+let partialQueued = new Set();
+const queuePartial = (rec) => { if (!partialQueued.has(rec)) { partialQueued.add(rec); requestAnimationFrame(() => { partialQueued.delete(rec); renderPartial(rec); }); } };
+
+function apply(ev) {
+  const rec = S.sessions.get(ev.sessionId);
+  switch (ev.type) {
+    case "snapshot": {
+      upsert(ev);
+      pickDefault();
+      if (S.sel === ev.sessionId) fullRender(); else queueChrome();
+      return;
+    }
+    case "remove":
+      S.sessions.delete(ev.sessionId);
+      if (S.sel === ev.sessionId) { S.sel = null; pickDefault(); fullRender(); } else queueChrome();
+      return;
+    case "notice":
+      if (!ev.sessionId || ev.sessionId === S.sel || !S.sessions.has(S.sel)) toast(ev.text, ev.level);
+      return;
+  }
+  if (!rec) return;
+  switch (ev.type) {
+    case "meta":
+      Object.assign(rec.meta, ev.patch);
+      queueChrome();
+      if (ev.patch.status && rec.partial == null && R?.sid === rec.meta.id) for (const id of rec.tools.keys()) refreshToolCards(rec, id);
+      break;
+    case "message":
+      rec.messages.push(ev.message);
+      if (ev.message.role === "assistant") rec.partial = null;
+      if (ev.message.role === "toolResult") rec.tools.delete(ev.message.toolCallId);
+      appendMessage(rec, ev.message);
+      if (rec.meta.kind === "subagent" && rec.messages.length === 1) queueChrome();
+      break;
+    case "partial":
+      rec.partial = ev.message;
+      queuePartial(rec);
+      break;
+    case "delta": {
+      const b = rec.partial?.content?.[ev.contentIndex];
+      if (!rec.partial) break;
+      if (!b) { rec.partial.content[ev.contentIndex] = ev.kind === "text" ? { type: "text", text: ev.delta } : { type: "thinking", thinking: ev.delta }; }
+      else if (ev.kind === "text") b.text = (b.text || "") + ev.delta; else b.thinking = (b.thinking || "") + ev.delta;
+      queuePartial(rec);
+      break;
+    }
+    case "tool":
+      rec.tools.set(ev.tool.toolCallId, ev.tool);
+      refreshToolCards(rec, ev.tool.toolCallId);
+      break;
+  }
+}
+
+let es;
+function connect() {
+  es?.close();
+  es = new EventSource("/api/stream");
+  es.addEventListener("state", (e) => {
+    const st = JSON.parse(e.data);
+    S.sessions.clear();
+    for (const s of st.sessions) upsert({ sessionId: s.meta.id, ...s });
+    S.connected = true;
+    pickDefault();
+    fullRender();
+  });
+  es.onmessage = (e) => { try { apply(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+  es.onerror = () => {
+    S.connected = false; renderChrome();
+    if (es.readyState === EventSource.CLOSED) setTimeout(connect, 2000);
+  };
+}
+connect();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && (!es || es.readyState === EventSource.CLOSED)) connect(); });
+
+// ---------- control ----------
+async function control(action, extra = {}) {
+  if (!S.sel) return;
+  try {
+    const r = await fetch("/api/control", { method: "POST", headers: { "content-type": "application/json", "x-piws": "1" }, body: JSON.stringify({ cmdId: String(Date.now()), sessionId: S.sel, action, ...extra }) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); toast(j.error || `HTTP ${r.status}`, "error"); return false; }
+    return true;
+  } catch (err) { toast(String(err), "error"); return false; }
+}
+const input = $("input");
+const grow = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, innerHeight * 0.4) + "px"; };
+input.addEventListener("input", grow);
+async function send() {
+  const text = input.value.trim();
+  if (!text) return;
+  if (await control("prompt", { text, mode: $("mode").value })) { input.value = ""; grow(); stick = true; toBottom(); }
+}
+$("send").onclick = send;
+input.addEventListener("keydown", (e) => {
+  // Enter sends on desktop; on touch keyboards Enter makes a newline and the button sends.
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing && matchMedia("(pointer: fine)").matches) { e.preventDefault(); send(); }
+});
+$("abort").onclick = () => { if (confirm("Abort the current run?")) control("abort"); };
+</script>
+</body>
+</html>

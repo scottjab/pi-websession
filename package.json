@@ -1,0 +1,24 @@
+{
+  "name": "pi-websession",
+  "version": "0.1.0",
+  "description": "Watch (and optionally drive) running pi sessions and their subagents from a browser over Tailscale",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "extension"
+  ],
+  "files": [
+    "src"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  }
+}
