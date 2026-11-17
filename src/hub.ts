@@ -1,5 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { open, realpath } from "node:fs/promises";
+import { basename, isAbsolute, resolve, sep } from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { APP_ID, bindHosts, port, token } from "./config.ts";
@@ -11,7 +13,11 @@ const MAX_MESSAGES = 1500;
 const MAX_TOOLS = 60;
 const OFFLINE_GRACE_MS = 90_000;
 const ENDED_RETENTION_MS = 30 * 60_000;
-const MAX_BODY = 8 * 1024 * 1024;
+const MAX_BODY = 48 * 1024 * 1024;
+const MAX_IMAGE_STORE = 96 * 1024 * 1024;
+const MAX_FILE_VIEW = 1024 * 1024;
+// Never serve these through the file viewer, even inside the project.
+const SECRET_FILE = /(^|\/)(\.env(\..*)?|\.netrc|\.npmrc|\.pypirc|id_[a-z0-9]+|.*\.(pem|key|p12|pfx|kdbx|age)|credentials(\.json)?|secrets?(\.[a-z]+)?)$/i;
 const BROWSER_BACKLOG_LIMIT = 8 * 1024 * 1024;
 
 /** Messages the hub pushes down to a publisher process. */
@@ -93,6 +99,8 @@ export class Hub {
   private sessions = new Map<string, SessionRec>();
   private owners = new Map<string, Owner>();
   private browsers = new Set<ServerResponse>();
+  private images = new Map<string, { mimeType: string; buf: Buffer }>();
+  private imageBytes = 0;
   private servers: Server[] = [];
   private heartbeat?: NodeJS.Timeout;
   readonly hosts: string[];
@@ -247,6 +255,9 @@ export class Hub {
       case "remove":
         this.removeTree(sid);
         return;
+      case "image":
+        this.storeImage(ev.ref, ev.mimeType, ev.data);
+        return;
       case "notice":
         this.broadcast(ev);
         return;
@@ -291,6 +302,51 @@ export class Hub {
     }
     rec.meta.updatedAt = Date.now();
     this.broadcast(ev);
+  }
+
+  private storeImage(ref: string, mimeType: string, data: string): void {
+    if (this.images.has(ref) || !/^[a-f0-9]{16,64}$/.test(ref) || !/^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(mimeType)) return; // no SVG: it could run script on our origin
+    const buf = Buffer.from(data, "base64");
+    this.images.set(ref, { mimeType, buf });
+    this.imageBytes += buf.length;
+    // Oldest first (Map keeps insertion order).
+    for (const [k, v] of this.images) {
+      if (this.imageBytes <= MAX_IMAGE_STORE) break;
+      this.images.delete(k);
+      this.imageBytes -= v.buf.length;
+    }
+  }
+
+  /** Read a text file for the viewer. Only inside the session's cwd, never secrets. */
+  private async readProjectFile(sid: string, p: string): Promise<{ status: number; body: any }> {
+    const rec = this.sessions.get(sid);
+    if (!rec?.meta.cwd) return { status: 404, body: { error: "unknown session" } };
+    let root: string;
+    let full: string;
+    try {
+      root = await realpath(rec.meta.cwd);
+      const expanded = p.startsWith("~/") ? resolve(process.env.HOME ?? "/", p.slice(2)) : p;
+      full = await realpath(isAbsolute(expanded) ? expanded : resolve(rec.meta.cwd, expanded));
+    } catch {
+      return { status: 404, body: { error: "file not found" } };
+    }
+    if (full !== root && !full.startsWith(root + sep)) return { status: 403, body: { error: "outside the session's working directory" } };
+    const rel = full.slice(root.length + 1);
+    if (SECRET_FILE.test(rel) || rel.split(sep).some((part) => part === ".git" || part === ".ssh" || part === ".gnupg")) {
+      return { status: 403, body: { error: "not shown (looks like a secret)" } };
+    }
+    const fh = await open(full, "r").catch(() => undefined);
+    if (!fh) return { status: 404, body: { error: "file not found" } };
+    try {
+      const st = await fh.stat();
+      if (!st.isFile()) return { status: 400, body: { error: "not a file" } };
+      const buf = Buffer.alloc(Math.min(st.size, MAX_FILE_VIEW));
+      await fh.read(buf, 0, buf.length, 0);
+      if (buf.subarray(0, 8000).includes(0)) return { status: 415, body: { error: "binary file" } };
+      return { status: 200, body: { path: rel, name: basename(full), text: buf.toString("utf8"), size: st.size, truncated: st.size > MAX_FILE_VIEW } };
+    } finally {
+      await fh.close();
+    }
   }
 
   private snapshotState(): HubState {
@@ -394,6 +450,20 @@ export class Hub {
       if (!owner) return json(res, 503, { error: "session is offline" });
       owner.send({ type: "command", command: { ...cmd, cmdId: String(cmd.cmdId ?? Date.now()) } });
       return json(res, 202, { ok: true });
+    }
+
+    const img = path.match(/^\/api\/image\/([a-f0-9]{16,64})$/);
+    if (img && req.method === "GET") {
+      const im = this.images.get(img[1]);
+      if (!im) return json(res, 404, { error: "image not available" });
+      res.writeHead(200, { "content-type": im.mimeType, "content-length": im.buf.length, "cache-control": "private, max-age=86400, immutable", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox" });
+      res.end(im.buf);
+      return;
+    }
+
+    if (path === "/api/file" && req.method === "GET") {
+      const r = await this.readProjectFile(url.searchParams.get("sid") ?? "", url.searchParams.get("path") ?? "");
+      return json(res, r.status, r.body);
     }
 
     // --- publisher ingest (other pi processes on this machine) ---

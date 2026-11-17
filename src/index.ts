@@ -198,6 +198,10 @@ class Publisher {
     this.emit({ type: "meta", sessionId: this.id, patch: p });
   }
 
+  private imageSink = (ref: string, mimeType: string, data: string): void => {
+    processNode().publishImage(this.id, ref, mimeType, data);
+  };
+
   snapshot(): SessionEvent {
     const messages: WireMessage[] = [];
     let input = 0;
@@ -209,7 +213,7 @@ class Publisher {
       else if (e.type === "custom_message") m = { role: "custom", customType: e.customType, content: e.content, display: e.display, timestamp: Date.parse(e.timestamp) };
       else if (e.type === "compaction") m = { role: "compactionSummary", summary: e.summary, timestamp: Date.parse(e.timestamp) };
       else if (e.type === "branch_summary") m = { role: "branchSummary", summary: e.summary, timestamp: Date.parse(e.timestamp) };
-      const w = toWire(m);
+      const w = toWire(m, this.imageSink);
       if (!w) continue;
       if (m.role === "assistant" && m.usage) {
         input += m.usage.input ?? 0;
@@ -292,7 +296,7 @@ class Publisher {
         this.meta.usage.cost += m.usage.cost?.total ?? 0;
       }
     }
-    const w = toWire(m);
+    const w = toWire(m, this.imageSink);
     if (w) this.emit({ type: "message", sessionId: this.id, message: w });
     if (m?.role === "assistant") {
       this.refreshContext();

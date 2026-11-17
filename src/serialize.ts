@@ -1,8 +1,14 @@
+import { createHash } from "node:crypto";
 import type { WireMessage } from "./protocol.ts";
+
+/** Receives image bytes pulled out of messages, so messages only carry a ref. */
+export type ImageSink = (ref: string, mimeType: string, data: string) => void;
 
 const MAX_TEXT = 60_000;
 const MAX_ARGS = 30_000;
 const MAX_PARTIAL_TOOL_OUTPUT = 8_000;
+const MAX_DIFF = 40_000;
+const MAX_IMAGE_B64 = 4 * 1024 * 1024;
 
 function clip(s: string, max = MAX_TEXT): string {
   if (typeof s !== "string") return s;
@@ -22,7 +28,7 @@ function clipArgs(args: unknown): unknown {
   return args;
 }
 
-function block(b: any): any {
+function block(b: any, sink?: ImageSink): any {
   if (!b || typeof b !== "object") return b;
   switch (b.type) {
     case "text":
@@ -31,29 +37,33 @@ function block(b: any): any {
       return { type: "thinking", thinking: clip(b.thinking ?? ""), redacted: b.redacted || undefined };
     case "toolCall":
       return { type: "toolCall", id: b.id, name: b.name, arguments: clipArgs(b.arguments) };
-    case "image":
-      // Images are big; the phone view only needs to know one was there.
-      return { type: "image", mimeType: b.mimeType, omitted: true };
+    case "image": {
+      const data = typeof b.data === "string" ? b.data : "";
+      if (!sink || !data || data.length > MAX_IMAGE_B64) return { type: "image", mimeType: b.mimeType, omitted: true };
+      const ref = createHash("sha256").update(data).digest("hex").slice(0, 32);
+      sink(ref, b.mimeType || "image/png", data);
+      return { type: "image", mimeType: b.mimeType, ref };
+    }
     default:
       return { type: b.type ?? "unknown" };
   }
 }
 
-function content(c: unknown): unknown {
+function content(c: unknown, sink?: ImageSink): unknown {
   if (typeof c === "string") return clip(c);
-  if (Array.isArray(c)) return c.map(block);
+  if (Array.isArray(c)) return c.map((b) => block(b, sink));
   return c;
 }
 
 /** Trim a pi AgentMessage down to what the web UI renders. Returns undefined to skip. */
-export function toWire(m: any): WireMessage | undefined {
+export function toWire(m: any, sink?: ImageSink): WireMessage | undefined {
   if (!m || typeof m !== "object" || typeof m.role !== "string") return undefined;
   const ts = typeof m.timestamp === "number" ? m.timestamp : Date.now();
   switch (m.role) {
     case "system":
       return undefined; // prompt + tool declarations, huge and not interesting live
     case "user":
-      return { role: "user", content: content(m.content), timestamp: ts };
+      return { role: "user", content: content(m.content, sink), timestamp: ts };
     case "assistant":
       return {
         role: "assistant",
@@ -70,8 +80,11 @@ export function toWire(m: any): WireMessage | undefined {
         role: "toolResult",
         toolCallId: m.toolCallId,
         toolName: m.toolName,
-        content: content(m.content),
+        content: content(m.content, sink),
         isError: !!m.isError,
+        durationMs: typeof m.durationMs === "number" ? m.durationMs : undefined,
+        // pi's edit tool computes a display diff; much nicer than the raw args.
+        diff: typeof m.details?.diff === "string" ? clip(m.details.diff, MAX_DIFF) : undefined,
         timestamp: ts,
       };
     case "bashExecution":
@@ -87,7 +100,7 @@ export function toWire(m: any): WireMessage | undefined {
       return {
         role: "custom",
         customType: m.customType,
-        content: content(m.content),
+        content: content(m.content, sink),
         display: m.display,
         timestamp: ts,
       };

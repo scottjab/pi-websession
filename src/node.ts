@@ -20,6 +20,7 @@ export type NodeMode = "idle" | "connecting" | "hub" | "client";
 
 const FLUSH_MS = 60;
 const MAX_QUEUE = 5000;
+const MAX_BATCH_BYTES = 6 * 1024 * 1024;
 
 class ProcessNode {
   readonly ownerId = `${hostname()}-${process.pid}-${randomBytes(3).toString("hex")}`;
@@ -35,6 +36,8 @@ class ProcessNode {
   private idleCheck?: NodeJS.Timeout;
   private listeners = new Set<() => void>();
   private retryDelay = 500;
+  /** Image refs the current hub already has. Reset whenever we (re)connect. */
+  private sentImages = new Set<string>();
 
   onChange(fn: () => void): () => void {
     this.listeners.add(fn);
@@ -97,9 +100,18 @@ class ProcessNode {
     if (this.queue.length > MAX_QUEUE) {
       // Hub can't keep up. Resync from scratch instead of growing forever.
       this.queue = [];
+      this.sentImages.clear();
       for (const s of this.sessions.values()) this.queue.push(s.snapshot());
     }
     this.flushTimer ??= setTimeout(() => this.flush(), FLUSH_MS);
+  }
+
+  /** Send image bytes once per hub connection; messages carry only the ref. */
+  publishImage(sessionId: string, ref: string, mimeType: string, data: string): void {
+    if (this.mode !== "hub" && this.mode !== "client") return;
+    if (this.sentImages.has(ref) || !this.sessions.has(sessionId)) return;
+    this.sentImages.add(ref);
+    this.publish({ type: "image", sessionId, ref, mimeType, data });
   }
 
   private dispatch(cmd: ControlCommand): void {
@@ -113,6 +125,7 @@ class ProcessNode {
   }
 
   private resyncAll(): void {
+    this.sentImages.clear();
     for (const s of this.sessions.values()) this.publish(s.snapshot());
   }
 
@@ -226,6 +239,7 @@ class ProcessNode {
     if (this.sub === undefined && this.mode !== "client" && this.mode !== "connecting") return;
     this.sub = undefined;
     this.queue = [];
+    this.sentImages.clear();
     clearTimeout(this.flushTimer);
     this.flushTimer = undefined;
     // Hub went away (its pi exited). Race to become the new hub.
@@ -235,7 +249,16 @@ class ProcessNode {
   private flush(): void {
     this.flushTimer = undefined;
     if (this.posting || this.queue.length === 0 || this.mode !== "client") return;
-    const events = this.queue.splice(0, 500);
+    // Batch by count and size; images and big snapshots can be several MB each.
+    let n = 0;
+    let bytes = 0;
+    while (n < this.queue.length && n < 500) {
+      const len = JSON.stringify(this.queue[n]).length;
+      if (n > 0 && bytes + len > MAX_BATCH_BYTES) break;
+      bytes += len;
+      n++;
+    }
+    const events = this.queue.splice(0, n);
     this.posting = true;
     const body = JSON.stringify({ owner: this.ownerId, events });
     const req = request({

@@ -50,7 +50,9 @@ export type SessionEvent =
   | { type: "delta"; sessionId: string; contentIndex: number; kind: "text" | "thinking"; delta: string }
   | { type: "tool"; sessionId: string; tool: ToolState }
   | { type: "notice"; sessionId: string; level: "info" | "warning" | "error"; text: string }
-  | { type: "remove"; sessionId: string };
+  | { type: "remove"; sessionId: string }
+  /** Image bytes, sent once per hub connection. Messages reference it as { type: "image", ref }. */
+  | { type: "image"; sessionId: string; ref: string; mimeType: string; data: string };
 
 /** Browser -> hub -> publisher. */
 export interface ControlCommand {

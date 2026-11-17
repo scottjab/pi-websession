@@ -13,18 +13,21 @@
   --bg: #ffffff; --bg2: #f5f6f8; --bg3: #eceef2; --fg: #1b1f24; --fg2: #57606a; --fg3: #8b949e;
   --border: #d8dde3; --accent: #2563eb; --accent-fg: #fff; --user: #e8f0fe; --ok: #1a7f37; --warn: #b7791f; --err: #cf222e;
   --think: #f6f1ff; --think-border: #c9b6f2; --code: #f3f4f6; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --hk: #cf222e; --hs: #0a3069; --hc: #6e7781; --hn: #0550ae; --ht: #8250df; --add-bg: #dafbe1; --del-bg: #ffebe9; --hl-line: #fff8c5;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --fg: #e6edf3; --fg2: #9da7b3; --fg3: #6e7681;
     --border: #30363d; --accent: #4c8dff; --user: #172a4a; --ok: #3fb950; --warn: #d29922; --err: #f85149;
     --think: #1d1730; --think-border: #4b3a78; --code: #161b22;
+    --hk: #ff7b72; --hs: #a5d6ff; --hc: #8b949e; --hn: #79c0ff; --ht: #d2a8ff; --add-bg: #12301d; --del-bg: #3a1618; --hl-line: #3a3212;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --fg: #e6edf3; --fg2: #9da7b3; --fg3: #6e7681;
   --border: #30363d; --accent: #4c8dff; --user: #172a4a; --ok: #3fb950; --warn: #d29922; --err: #f85149;
   --think: #1d1730; --think-border: #4b3a78; --code: #161b22;
+  --hk: #ff7b72; --hs: #a5d6ff; --hc: #8b949e; --hn: #79c0ff; --ht: #d2a8ff; --add-bg: #12301d; --del-bg: #3a1618; --hl-line: #3a3212;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -132,6 +135,41 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 #menuBtn { background: none; border: 0; font-size: 20px; padding: 0 4px; color: var(--fg2); }
 #fmtBtn { background: none; border: 1px solid var(--border); border-radius: 6px; font: 600 11px var(--mono); padding: 3px 6px; color: var(--fg2); }
 .raw { white-space: pre-wrap; }
+/* code + output blocks */
+.hk { color: var(--hk); } .hs { color: var(--hs); } .hc { color: var(--hc); font-style: italic; } .hn { color: var(--hn); } .ht { color: var(--ht); }
+.out { position: relative; }
+.out pre { margin: 0; }
+.out .l { display: block; min-height: 1.45em; }
+.out.nums .l::before { content: attr(data-n); display: inline-block; width: var(--lnw, 3ch); margin-right: 10px; text-align: right; color: var(--fg3); user-select: none; -webkit-user-select: none; }
+.out .l.add { background: var(--add-bg); } .out .l.del { background: var(--del-bg); } .out .l.mark { background: var(--hl-line); }
+.out .fold { display: block; width: 100%; margin: 4px 0; padding: 3px; border: 1px dashed var(--border); border-radius: 6px; background: none; color: var(--fg2); font: 12px var(--mono); }
+.copy { position: absolute; top: 4px; right: 4px; z-index: 1; padding: 1px 7px; font-size: 11px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg2); color: var(--fg2); opacity: .85; }
+.md .out { margin: .4em 0; }
+.md .out pre { background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; overflow-x: auto; }
+.tool .out + .out { border-top: 1px dashed var(--border); }
+.tool .out.args pre { color: var(--fg2); }
+.tool .out.err pre { color: var(--err); }
+.tool .ts.dim { color: var(--fg3); }
+.tool .ta .dim { color: var(--fg3); }
+.tool .ta .add { color: var(--ok); } .tool .ta .del { color: var(--err); }
+.file-link { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.ta .file-link { color: var(--fg); }
+.img { display: block; max-width: calc(100% - 20px); max-height: 360px; margin: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg3); }
+.msg.user .img { margin: 6px 0 0; max-width: 100%; }
+.img-missing { margin: 6px 10px; font-size: 12px; color: var(--fg3); }
+.kidres { border-top: 1px dashed var(--border); padding: 8px 10px; font-size: 14px; }
+.kidres .h { font-size: 12px; color: var(--fg2); margin-bottom: 4px; }
+.urow { align-self: flex-end; max-width: 88%; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.urow .msg.user { max-width: 100%; }
+.time { font-size: 11px; color: var(--fg3); }
+#viewer { position: fixed; inset: 0; z-index: 25; display: none; flex-direction: column; background: var(--bg); }
+#viewer.show { display: flex; }
+#viewer .vh { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--bg2); }
+#vName { flex: 1; min-width: 0; font: 600 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+#viewer .vh button { border: 1px solid var(--border); background: var(--bg); border-radius: 6px; padding: 3px 10px; }
+#vBody { flex: 1; overflow: auto; padding: 8px 4px 40px; }
+#vBody pre { white-space: pre; font-size: 12.5px; }
+#vBody .msg { padding: 20px; }
 .msg.user.md, details.think .body.md, .msg.summary.md { white-space: normal; }
 </style>
 </head>
@@ -159,6 +197,7 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 </footer>
 <div id="drawer"><div class="scrim"></div><div class="panel" id="drawerPanel"></div></div>
 <div id="toasts"></div>
+<div id="viewer"><div class="vh"><span id="vName"></span><button id="vCopy">copy</button><button id="vClose" aria-label="Close">✕</button></div><div id="vBody"></div></div>
 
 <script>
 "use strict";
@@ -176,13 +215,141 @@ const fmtDur = (ms) => ms == null ? "" : ms < 1000 ? ms + "ms" : ms < 60000 ? (m
 const fmtTok = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n ?? 0);
 const base = (p) => String(p || "").split("/").filter(Boolean).pop() || p || "";
 
+// ---------- syntax highlighting (small, dependency-free) ----------
+const KW = new Set(("abstract and as assert async await break case catch class const continue crate debugger declare def default defer del delete do done elif else enum esac except export extends extern false fi final finally fn for from func function go goto if impl implements import in inherit instanceof interface is lambda let local loop match mod module mut namespace new nil none not null of or package pass private protected pub public raise readonly rec return self Self static struct super switch then this throw throws trait true try type typeof undefined unsafe use using var void where while with yield None True False").split(" "));
+const EXT = { js: "c", mjs: "c", cjs: "c", jsx: "c", ts: "c", tsx: "c", mts: "c", cts: "c", rs: "c", go: "c", c: "c", h: "c", cc: "c", cpp: "c", hpp: "c", java: "c", cs: "c", kt: "c", swift: "c", scala: "c", dart: "c", zig: "c", php: "c", json: "c", jsonc: "c", json5: "c", scss: "c", css: "css", py: "h", sh: "h", bash: "h", zsh: "h", fish: "h", rb: "h", yaml: "h", yml: "h", toml: "h", nix: "nix", pl: "h", r: "h", conf: "h", ini: "h", dockerfile: "h", makefile: "h", mk: "h", sql: "d", lua: "d", hs: "d", javascript: "c", typescript: "c", rust: "c", golang: "c", python: "h", shell: "h", console: "h", ruby: "h", haskell: "d" };
+const COM = { c: /\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/, nix: /#[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/, h: /#[^\n]*/, d: /--[^\n]*/, css: /\/\*[\s\S]*?(?:\*\/|$)/ };
+const STR = /"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`/;
+const RX = {};
+const extOf = (p) => { const b = base(String(p || "").replace(/:\d+(-\d+)?$/, "")).toLowerCase(); if (b === "dockerfile" || b === "makefile") return b; const i = b.lastIndexOf("."); return i > 0 ? b.slice(i + 1) : ""; };
+const wrapLines = (cls, t) => t.split("\n").map((p) => p ? `<span class="${cls}">${esc(p)}</span>` : "").join("\n");
+function hl(code, lang) {
+  code = String(code ?? "");
+  const fam = EXT[String(lang || "").toLowerCase()];
+  if (!fam || code.length > 300000) return esc(code);
+  const re = RX[fam] ??= new RegExp(`(${COM[fam].source})|(${STR.source})|(\\b\\d[\\w.]*)|([A-Za-z_$][\\w$]*)`, "g");
+  re.lastIndex = 0;
+  let out = "", last = 0, m;
+  while ((m = re.exec(code))) {
+    out += esc(code.slice(last, m.index));
+    const t = m[0];
+    if (m[1]) out += wrapLines("hc", t);
+    else if (m[2]) out += wrapLines("hs", t);
+    else if (m[3]) out += `<span class="hn">${esc(t)}</span>`;
+    else out += KW.has(t) ? `<span class="hk">${t}</span>` : fam !== "h" && /^[A-Z][a-z]/.test(t) ? `<span class="ht">${t}</span>` : esc(t);
+    last = re.lastIndex;
+    if (!t) re.lastIndex++;
+  }
+  return out + esc(code.slice(last));
+}
+const PATH_EXT = new Set([...Object.keys(EXT), "md", "txt", "html", "htm", "xml", "lock", "svelte", "vue", "proto", "graphql", "env.example", "cfg", "el", "ex", "exs", "erl", "ml", "clj", "jl", "tf", "gradle"]);
+function looksLikePath(t) {
+  if (t.length > 200 || !/^(~|\.{1,2})?[\w.@+\/-]*\.[A-Za-z][\w]{0,9}(:\d+(-\d+)?)?$/.test(t)) return false;
+  if (/^https?:/.test(t) || /\.{3}/.test(t)) return false;
+  return t.includes("/") || PATH_EXT.has(extOf(t));
+}
+
+// ---------- ANSI colors ----------
+const ANSI16 = ["#5c6370", "#e5534b", "#3fa45b", "#c69026", "#4c8dff", "#b083f0", "#2fb4c4", "#9da7b3", "#768390", "#ff7b72", "#56d364", "#e3b341", "#79c0ff", "#d2a8ff", "#56d4dd", "#cdd9e5"];
+const xterm = (n) => { if (n < 16) return ANSI16[n]; if (n >= 232) { const v = 8 + (n - 232) * 10; return `rgb(${v},${v},${v})`; } n -= 16; const f = (x) => x ? 55 + x * 40 : 0; return `rgb(${f(Math.floor(n / 36))},${f(Math.floor(n / 6) % 6)},${f(n % 6)})`; };
+const hasAnsi = (s) => s.includes("\x1b[");
+function ansi(text) {
+  let s = String(text ?? "").replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "").replace(/\x1b\[[0-9;?]*[A-Za-ln-z]/g, "");
+  s = s.split("\n").map((l) => l.includes("\r") ? (l.split("\r").filter(Boolean).pop() ?? "") : l).join("\n");
+  let out = "", st = {};
+  const css = () => [st.fg && `color:${st.fg}`, st.bg && `background:${st.bg}`, st.b && "font-weight:600", st.dim && "opacity:.7", st.i && "font-style:italic", st.u && "text-decoration:underline"].filter(Boolean).join(";");
+  const parts = s.split(/\x1b\[([0-9;]*)m/);
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) { const c = css(); out += c ? parts[i].split("\n").map((p) => p ? `<span style="${c}">${esc(p)}</span>` : "").join("\n") : esc(parts[i]); continue; }
+    const codes = parts[i] === "" ? [0] : parts[i].split(";").map(Number);
+    for (let j = 0; j < codes.length; j++) {
+      const c = codes[j];
+      if (c === 0) st = {};
+      else if (c === 1) st.b = 1; else if (c === 2) st.dim = 1; else if (c === 3) st.i = 1; else if (c === 4) st.u = 1;
+      else if (c === 22) st.b = st.dim = 0; else if (c === 23) st.i = 0; else if (c === 24) st.u = 0;
+      else if (c >= 30 && c <= 37) st.fg = ANSI16[c - 30]; else if (c >= 90 && c <= 97) st.fg = ANSI16[c - 82];
+      else if (c >= 40 && c <= 47) st.bg = ANSI16[c - 40]; else if (c >= 100 && c <= 107) st.bg = ANSI16[c - 92];
+      else if (c === 39) st.fg = null; else if (c === 49) st.bg = null;
+      else if ((c === 38 || c === 48) && codes[j + 1] === 5) { st[c === 38 ? "fg" : "bg"] = xterm(codes[j + 2] | 0); j += 2; }
+      else if ((c === 38 || c === 48) && codes[j + 1] === 2) { st[c === 38 ? "fg" : "bg"] = `rgb(${codes[j + 2] | 0},${codes[j + 3] | 0},${codes[j + 4] | 0})`; j += 4; }
+    }
+  }
+  return out;
+}
+
+// ---------- output blocks: highlight/ANSI, line numbers, diff, fold, copy ----------
+const FULL = new WeakMap(); // block element -> full text for the copy button
+const FOLD_AT = 60, FOLD_HEAD = 25, FOLD_TAIL = 15;
+function outBlock(text, o = {}) {
+  text = String(text ?? "").replace(/\n$/, "");
+  const w = el("div", "out" + (o.nums ? " nums" : "") + (o.cls ? " " + o.cls : ""));
+  FULL.set(w, hasAnsi(text) ? text.replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "") : text);
+  const draw = (all) => {
+    let lines, cls = [];
+    if (o.diff) {
+      const raw = text.split("\n");
+      lines = raw.map((l) => esc(l));
+      cls = raw.map((l) => l[0] === "+" ? "add" : l[0] === "-" ? "del" : "");
+    } else lines = (hasAnsi(text) ? ansi(text) : hl(text, o.lang)).split("\n");
+    const start = o.start || 1;
+    let idx = lines.map((_, i) => i);
+    const fold = !all && !o.noFold && lines.length > FOLD_AT;
+    if (fold) idx = [...idx.slice(0, FOLD_HEAD), -1, ...idx.slice(-FOLD_TAIL)];
+    const span = (i) => `<span class="l${cls[i] ? " " + cls[i] : ""}${o.mark && i + start >= o.mark[0] && i + start <= o.mark[1] ? " mark" : ""}" data-n="${i + start}">${lines[i] || " "}</span>`;
+    const body = idx.map((i) => i < 0 ? `<button class="fold">show ${lines.length - FOLD_HEAD - FOLD_TAIL} more lines</button>` : span(i)).join("");
+    w.innerHTML = `${o.noCopy ? "" : '<button class="copy">copy</button>'}<pre style="--lnw:${String(start + lines.length).length}ch">${body}</pre>`;
+    w.querySelector(".fold")?.addEventListener("click", (e) => { e.stopPropagation(); draw(true); });
+  };
+  draw(false);
+  return w;
+}
+function argsDiff(edits) {
+  return (edits || []).map((e) => [...String(e?.oldText ?? "").split("\n").map((l) => "- " + l), ...String(e?.newText ?? "").split("\n").map((l) => "+ " + l)].join("\n")).join("\n     ...\n");
+}
+function diffCounts(diff) {
+  let a = 0, d = 0;
+  for (const l of String(diff).split("\n")) { if (l[0] === "+") a++; else if (l[0] === "-") d++; }
+  return { a, d };
+}
+function copyText(t) {
+  const done = () => toast("copied");
+  if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(t).then(done, () => fallback()); return; }
+  fallback();
+  function fallback() {
+    const ta = el("textarea"); ta.value = t; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;";
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, t.length);
+    try { document.execCommand("copy"); done(); } catch { toast("copy failed", "error"); }
+    ta.remove();
+  }
+}
+function imgEl(b) {
+  if (b?.ref) {
+    const a = el("a"); a.href = `/api/image/${b.ref}`; a.target = "_blank"; a.rel = "noopener";
+    const i = el("img", "img"); i.loading = "lazy"; i.alt = "image"; i.src = a.href;
+    i.onerror = () => a.replaceWith(el("div", "img-missing", "[image no longer available]"));
+    a.appendChild(i); return a;
+  }
+  return el("div", "img-missing", "[image]");
+}
+const imagesOf = (c) => Array.isArray(c) ? c.filter((b) => b?.type === "image") : [];
+function fmtTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts), now = new Date();
+  const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === now.toDateString() ? hm : d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + hm;
+}
+function ago(ts) {
+  const s = Math.max(0, (Date.now() - ts) / 1000);
+  return s < 45 ? "just now" : s < 3600 ? Math.round(s / 60) + "m ago" : s < 86400 ? Math.round(s / 3600) + "h ago" : Math.round(s / 86400) + "d ago";
+}
+
 function md(src) {
   // Small, safe markdown: escape first, then add structure.
   const blocks = [];
-  let s = String(src ?? "").replace(/```([\w+-]*)\n?([\s\S]*?)(```|$)/g, (_, lang, code) => { blocks.push(`<pre><code>${esc(code.replace(/\n$/, ""))}</code></pre>`); return `\u0000${blocks.length - 1}\u0000`; });
+  let s = String(src ?? "").replace(/```([\w+-]*)\n?([\s\S]*?)(```|$)/g, (_, lang, code) => { blocks.push(`<div class="out"><button class="copy">copy</button><pre><code>${hl(code.replace(/\n$/, ""), lang)}</code></pre></div>`); return `\u0000${blocks.length - 1}\u0000`; });
   s = esc(s);
   const inline = (t) => t
-    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/`([^`\n]+)`/g, (_, c) => looksLikePath(c) ? `<code class="file-link" data-file="${c}">${c}</code>` : `<code>${c}</code>`)
     .replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>")
     .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, "$1<i>$2</i>")
     .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
@@ -269,32 +436,86 @@ function toolResultFor(rec, id) { for (let i = rec.messages.length - 1; i >= 0; 
 function renderToolCard(rec, call, opts = {}) {
   const d = el("details", "tool");
   d.dataset.id = call.id;
+  d.dataset.name = call.name;
   const k = rec.meta.id + ":" + call.id;
-  fillToolCard(d, rec, call, opts);
   d.open = S.toolOpen.has(k);
-  d.addEventListener("toggle", () => { d.open ? S.toolOpen.add(k) : S.toolOpen.delete(k); });
+  fillToolCard(d, rec, call, opts);
+  d.addEventListener("toggle", () => {
+    d.open ? S.toolOpen.add(k) : S.toolOpen.delete(k);
+    // Bodies are built lazily, so big outputs cost nothing until opened.
+    if (d.open && d._stale) fillToolCard(d, ...d._stale);
+  });
   return d;
 }
-function fillToolCard(d, rec, call, { streaming } = {}) {
+const pathArg = (a) => a && typeof a === "object" ? (a.path || a.file_path || "") : "";
+function fillToolCard(d, rec, call, opts = {}) {
+  const { streaming } = opts;
   const res = toolResultFor(rec, call.id);
   const live = rec.tools.get(call.id);
+  const name = String(call.name).toLowerCase();
+  const a = call.arguments && typeof call.arguments === "object" ? call.arguments : {};
+  const outText = res ? textOf(res.content) : live?.partial || "";
+  const exit = res && /Command exited with code (\d+)\s*$/.exec(outText)?.[1];
+  const dur = res?.durationMs ?? live?.durationMs;
   let status;
-  if (res) status = res.isError ? '<span class="ts err">error</span>' : '<span class="ts ok">✓</span>';
-  else if (live?.status === "running") status = `<span class="ts run"><span class="spin"></span></span>`;
+  if (res) status = res.isError ? `<span class="ts err">${exit ? "exit " + esc(exit) : "error"}</span>` : '<span class="ts ok">✓</span>';
+  else if (live?.status === "running" || (!streaming && rec.meta.status === "running")) status = `<span class="ts run"><span class="spin"></span></span>`;
   else if (streaming) status = '<span class="ts">…</span>';
-  else if (rec.meta.status === "running") status = `<span class="ts run"><span class="spin"></span></span>`;
   else status = '<span class="ts">–</span>';
-  const wasOpen = d.open;
-  const kids = call.name === "subagent" ? children(rec.meta.id) : [];
-  let body = "";
-  const argsJson = (() => { try { return JSON.stringify(call.arguments, null, 2); } catch { return ""; } })();
-  if (argsJson && argsJson !== "{}") body += `<pre class="args">${esc(argsJson)}</pre>`;
-  if (res) body += `<pre>${esc(textOf(res.content) || "(no output)")}</pre>`;
-  else if (live?.partial) body += `<pre>${esc(live.partial)}</pre>`;
-  // Child links live in the summary so they work while the card is collapsed.
+  const kids = name === "subagent" ? children(rec.meta.id) : [];
+  // Summary line: name, args (file paths are links), diff counts, child links, duration, status.
+  const p = pathArg(a);
+  let ta = p && (name === "read" || name === "edit" || name === "write")
+    ? `<span class="file-link" data-file="${esc(p)}${a.offset ? ":" + (a.offset | 0) : ""}">${esc(p)}${a.offset ? ":" + (a.offset | 0) : ""}</span>`
+    : esc(argSummary(call.name, call.arguments));
+  const diff = name === "edit" ? (res?.diff ?? (Array.isArray(a.edits) ? argsDiff(a.edits) : "")) : "";
+  if (diff) { const c = diffCounts(diff); ta += ` <span class="add">+${c.a}</span> <span class="del">−${c.d}</span>`; }
+  if (name === "write" && typeof a.content === "string") ta += ` <span class="dim">${a.content.split("\n").length} lines</span>`;
   const kidBtns = kids.map((k) => `<button class="open-child" data-sid="${esc(k.meta.id)}">open${kids.length > 1 ? " " + esc(short(title(k), 20)) : ""}</button>`).join("");
-  d.innerHTML = `<summary><span class="tn">${esc(call.name)}</span><span class="ta">${esc(argSummary(call.name, call.arguments))}</span>${kidBtns}${status}</summary><div class="tb">${body}</div>`;
-  d.open = wasOpen; // collapsed unless the user opened it
+  const durHtml = dur != null && res ? `<span class="ts dim">${fmtDur(dur)}</span>` : "";
+  const summary = el("summary", "", `<span class="tn">${esc(call.name)}</span><span class="ta">${ta}</span>${kidBtns}${durHtml}${status}`);
+  const tb = el("div", "tb");
+  d.replaceChildren(summary, tb);
+  if (!d.open) { d._stale = [rec, call, opts]; return; }
+  d._stale = null;
+  const add = (n) => n && tb.appendChild(n);
+  if (name === "edit" && diff) {
+    add(outBlock(diff, { diff: true }));
+    if (res?.isError) add(outBlock(outText, { cls: "err" }));
+  } else if (name === "write" && typeof a.content === "string") {
+    add(outBlock(a.content, { lang: extOf(p), nums: true }));
+    if (res?.isError) add(outBlock(outText, { cls: "err" }));
+  } else if (name === "read" && res && !res.isError && outText) {
+    add(outBlock(outText, { lang: extOf(p), nums: true, start: a.offset | 0 || 1 }));
+  } else {
+    if (name === "bash") { if (a.command && (a.command.includes("\n") || a.command.length > 70)) add(outBlock(a.command, { lang: "sh", cls: "args" })); }
+    else {
+      const argsJson = (() => { try { return JSON.stringify(call.arguments, null, 2); } catch { return ""; } })();
+      if (argsJson && argsJson !== "{}") add(outBlock(argsJson, { lang: "json", cls: "args" }));
+    }
+    const showKids = kids.length && (!res || outText.length < 400);
+    // Error output goes red, unless it has its own colors.
+    if (outText) add(outBlock(outText, { cls: res?.isError && !hasAnsi(outText) ? "err" : "" }));
+    if (showKids) for (const k of kids) add(kidResult(k));
+  }
+  for (const b of imagesOf(res?.content)) add(imgEl(b));
+}
+/** Latest answer from a subagent, shown inside the parent's subagent card. */
+function kidResult(k) {
+  const box = el("div", "kidres");
+  const last = [...k.messages].reverse().find((m) => m.role === "assistant" && textOf(m.content).trim());
+  const done = k.meta.status === "ended" || k.meta.status === "idle";
+  box.appendChild(el("div", "h", `${esc(short(title(k), 50))} · ${done ? "result" : "latest"}`));
+  box.appendChild(last ? fmt(textOf(last.content).slice(0, 20000)) : el("div", "usage", "no answer yet"));
+  return box;
+}
+function refreshKidCards(parentId) {
+  const parent = S.sessions.get(parentId);
+  if (!parent || R?.sid !== parentId) return;
+  for (const d of logEl.querySelectorAll('details.tool[data-name="subagent"]')) {
+    const call = findCall(parent, d.dataset.id);
+    if (call) fillToolCard(d, parent, call, { streaming: d.closest(".msg") === R.partialEl });
+  }
 }
 
 function renderAssistant(rec, m, streaming) {
@@ -322,7 +543,7 @@ function renderAssistant(rec, m, streaming) {
   if (m.stopReason === "error" && m.errorMessage) wrap.appendChild(el("div", "msg err", esc(m.errorMessage)));
   if (m.stopReason === "aborted") wrap.appendChild(el("div", "msg meta", "aborted"));
   if (!streaming && m.usage && (m.usage.input || m.usage.output)) {
-    wrap.appendChild(el("div", "usage", `${esc((m.model || "").split("/").pop())} · ${fmtTok(m.usage.input)} in · ${fmtTok(m.usage.output)} out${m.usage.cost ? ` · $${m.usage.cost.toFixed(4)}` : ""}`));
+    wrap.appendChild(el("div", "usage", `${esc((m.model || "").split("/").pop())} · ${fmtTok(m.usage.input)} in · ${fmtTok(m.usage.output)} out${m.usage.cost ? ` · $${m.usage.cost.toFixed(4)}` : ""}${m.timestamp ? " · " + fmtTime(m.timestamp) : ""}`));
   }
   if (streaming && !wrap.childElementCount) wrap.appendChild(el("div", "md cursor", ""));
   return wrap;
@@ -331,13 +552,20 @@ function renderAssistant(rec, m, streaming) {
 function renderMessage(rec, m) {
   switch (m.role) {
     case "user": {
-      return fmt(textOf(m.content), "msg user");
+      const row = el("div", "urow");
+      const text = typeof m.content === "string" ? m.content : (m.content || []).filter((x) => x.type === "text").map((x) => x.text).join("");
+      const b = fmt(text, "msg user");
+      for (const im of imagesOf(m.content)) b.appendChild(imgEl(im));
+      row.append(b, el("div", "time", fmtTime(m.timestamp)));
+      return row;
     }
     case "assistant": return renderAssistant(rec, m, false);
     case "toolResult": return null; // shown inside its tool call card
     case "bashExecution": {
       const d = el("details", "tool");
-      d.innerHTML = `<summary><span class="tn">!</span><span class="ta">${esc(m.command)}</span><span class="ts">${m.exitCode ?? ""}</span></summary><div class="tb"><pre>${esc(m.output)}</pre></div>`;
+      const bad = m.exitCode != null && m.exitCode !== 0;
+      d.innerHTML = `<summary><span class="tn">!</span><span class="ta">${esc(m.command)}</span><span class="ts ${bad ? "err" : "ok"}">${bad ? "exit " + esc(m.exitCode) : m.cancelled ? "cancelled" : "✓"}</span></summary><div class="tb"></div>`;
+      if (m.output) d.lastChild.appendChild(outBlock(m.output, { cls: bad ? "err" : "" }));
       return d;
     }
     case "custom": {
@@ -451,7 +679,7 @@ function renderDrawer() {
   for (const r of roots) {
     const rows = [[r, 0], ...descendants(r.meta.id)];
     for (const [s, d] of rows) {
-      h += `<button class="srow${d ? " child" : ""}${d > 1 ? " d2" : ""}${s.meta.id === S.sel ? " sel" : ""}" data-sid="${esc(s.meta.id)}"><span class="dot ${s.meta.status}"></span><span class="t"><div class="n">${esc(title(s))}</div><div class="m">${esc(subText(s.meta))}${d === 0 && s.meta.cwd ? " · " + esc(s.meta.cwd) : ""}</div></span>${s.meta.controllable ? "<span title='controllable'>⌨</span>" : ""}</button>`;
+      h += `<button class="srow${d ? " child" : ""}${d > 1 ? " d2" : ""}${s.meta.id === S.sel ? " sel" : ""}" data-sid="${esc(s.meta.id)}"><span class="dot ${s.meta.status}"></span><span class="t"><div class="n">${esc(title(s))}</div><div class="m">${esc(subText(s.meta))} · ${ago(s.meta.updatedAt)}${d === 0 && s.meta.cwd ? " · " + esc(s.meta.cwd) : ""}</div></span>${s.meta.controllable ? "<span title='controllable'>⌨</span>" : ""}</button>`;
     }
   }
   p.innerHTML = h;
@@ -466,9 +694,43 @@ function select(sid) {
 }
 
 document.addEventListener("click", (e) => {
+  const c = e.target.closest(".copy");
+  if (c) { e.preventDefault(); e.stopPropagation(); const w = c.closest(".out"); copyText(FULL.get(w) ?? w.querySelector("pre").innerText); return; }
+  const f = e.target.closest("[data-file]");
+  if (f) { e.preventDefault(); openFile(f.dataset.file); return; }
   const b = e.target.closest("[data-sid]");
   if (b) { e.preventDefault(); select(b.dataset.sid); }
 });
+
+// ---------- file viewer ----------
+let viewerText = "";
+async function openFile(spec) {
+  const sid = S.sel;
+  const m = /^(.*?)(?::(\d+)(?:-(\d+))?)?$/.exec(spec);
+  const path = m[1], from = m[2] ? +m[2] : 0, to = m[3] ? +m[3] : from;
+  $("vName").textContent = path;
+  $("vBody").innerHTML = '<div class="msg meta">loading…</div>';
+  viewerText = "";
+  if (!$("viewer").classList.contains("show")) { $("viewer").classList.add("show"); history.pushState({ viewer: 1 }, "", location.hash); }
+  try {
+    const r = await fetch(`/api/file?sid=${encodeURIComponent(sid)}&path=${encodeURIComponent(path)}`);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    viewerText = j.text;
+    $("vName").textContent = j.path + (j.truncated ? " (first 1 MB)" : "");
+    const block = outBlock(j.text, { lang: extOf(j.name), nums: true, noFold: true, noCopy: true, mark: from ? [from, to] : null });
+    $("vBody").replaceChildren(block);
+    const line = from && block.querySelector(`.l[data-n="${from}"]`);
+    if (line) line.scrollIntoView({ block: "center" });
+  } catch (err) {
+    $("vBody").innerHTML = `<div class="msg err">${esc(err.message || err)}</div>`;
+  }
+}
+const closeViewer = () => { $("viewer").classList.remove("show"); $("vBody").innerHTML = ""; };
+$("vClose").onclick = () => { history.state?.viewer ? history.back() : closeViewer(); };
+$("vCopy").onclick = () => viewerText && copyText(viewerText);
+addEventListener("popstate", () => { if ($("viewer").classList.contains("show")) closeViewer(); });
+addEventListener("keydown", (e) => { if (e.key === "Escape" && $("viewer").classList.contains("show")) $("vClose").onclick(); });
 $("sessBtn").onclick = () => { renderDrawer(); $("drawer").classList.add("open"); };
 $("drawer").querySelector(".scrim").onclick = () => $("drawer").classList.remove("open");
 $("menuBtn").onclick = () => {
@@ -534,6 +796,7 @@ function apply(ev) {
     case "meta":
       Object.assign(rec.meta, ev.patch);
       queueChrome();
+      if (ev.patch.status && rec.meta.parentId) refreshKidCards(rec.meta.parentId);
       if (ev.patch.status && rec.partial == null && R?.sid === rec.meta.id) for (const id of rec.tools.keys()) refreshToolCards(rec, id);
       break;
     case "message":
@@ -541,6 +804,7 @@ function apply(ev) {
       if (ev.message.role === "assistant") rec.partial = null;
       if (ev.message.role === "toolResult") rec.tools.delete(ev.message.toolCallId);
       appendMessage(rec, ev.message);
+      if (rec.meta.parentId && ev.message.role === "assistant") refreshKidCards(rec.meta.parentId);
       if (rec.meta.kind === "subagent" && rec.messages.length === 1) queueChrome();
       break;
     case "partial":

@@ -4,6 +4,8 @@ Watch a running pi session, and its subagents, live from your phone or a browser
 
 - Opt in per session with `/web`. Nothing is shared until you do.
 - Shows the main thread and every subagent (foreground and background) as a tree, live: streaming text, thinking, tool calls with args, streaming tool output, and results.
+- Readable on a phone: edits show as diffs, writes and reads as highlighted files with line numbers, bash output keeps its colors, exit codes and durations sit in the card header, and long output is folded. Code blocks get syntax highlighting and copy buttons. Images show up (screenshots, pasted images). A finished subagent's answer shows inside the parent's card. The **MD/TXT** button switches between rendered markdown and raw text.
+- Tap a file path (in a tool card, or `like/this.ts:42` in a message) to open it in a viewer, scrolled to that line. Only files inside that session's working directory, never `.env`, keys, `.git` or `.ssh`.
 - Control is a separate opt-in (`/web control`, with a confirm prompt): send prompts, steer or queue follow-ups while it's working, and abort.
 
 ## Install
@@ -42,7 +44,7 @@ The opt-in is remembered per session file, so a resumed session comes back share
 - **Subagents.** When a session is shared, the extension registers itself with pi-subagents (`registerRequiredChildExtensions`), so child sessions load it too. A child publishes when its `parentSession` chain leads to a shared session. Finished subagents stay listed as "done" for 30 minutes, or until their parent goes away.
 - **Consent** lives in `~/.pi/agent/websession/shared-sessions.json`. Publishers re-read it every few seconds and again right before acting on any web command, so `/web nocontrol` and `/web off` take effect right away.
 - **Auth.** A random token in `~/.pi/agent/websession/token` (mode 600), checked with a constant-time compare. It's sent as an HttpOnly SameSite=Strict cookie. Control POSTs also need a custom header, which blocks cross-site form posts.
-- Big payloads are trimmed: text over 60k chars, tool args over 30k, and images are dropped (the UI shows a placeholder). Streaming text goes as deltas, throttled to about 8 updates a second.
+- Big payloads are trimmed: text over 60k chars, tool args over 30k. Images are sent to the hub once and messages only carry a hash. Streaming text goes as deltas, throttled to about 8 updates a second.
 
 ## Config (env vars)
 
@@ -57,6 +59,8 @@ The opt-in is remembered per session file, so a resumed session comes back share
 
 ## Limits
 
+- The file viewer reads files as they are now, not as they were at that point in the session. Up to 1 MB, text only.
+- Images over ~3 MB are dropped. The hub keeps up to 96 MB of images in memory and drops the oldest past that.
 - It's plain HTTP. On the tailnet that's encrypted by WireGuard, but on the LAN the token and transcript go over the wire in clear. Use `PI_WEBSESSION_HOST=tailscale` if you don't trust the network.
 - LAN/Tailscale addresses are picked when the hub starts. If you switch networks, the next hub (or `/web off` + `/web` in the hub pi) picks up the new ones.
 - On NixOS the firewall usually trusts `tailscale0` but not your wifi/ethernet, so open the port for LAN: `networking.firewall.allowedTCPPorts = [ 7878 ];`.
