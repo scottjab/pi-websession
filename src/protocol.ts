@@ -32,6 +32,10 @@ export interface SessionMeta {
   usage?: { input: number; output: number; cost: number };
   /** Context usage percent, when known. */
   contextPercent?: number;
+  /** True while a compaction (manual or automatic) is running in this session. */
+  compacting?: boolean;
+  /** What triggered the compaction: manual /compact, the context threshold, or overflow recovery. */
+  compactionReason?: "manual" | "threshold" | "overflow";
 }
 
 /** A message as shown in the UI (pi AgentMessage, trimmed for transport). */
@@ -76,7 +80,7 @@ export type SessionEvent =
 export interface ControlCommand {
   cmdId: string;
   sessionId: string;
-  action: "prompt" | "abort" | "compact" | "model" | "thinking";
+  action: "prompt" | "abort" | "compact" | "new" | "model" | "thinking";
   text?: string;
   /** For "model": "provider/id". */
   model?: string;

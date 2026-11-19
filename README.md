@@ -3,10 +3,10 @@
 Watch a running pi session, and its subagents, live from your phone or a browser over Tailscale or your local network. You can also drive it from there if you say so.
 
 - Opt in per session with `/web`. Nothing is shared until you do.
-- Shows the main thread and every subagent (foreground and background) as a tree, live: streaming text, thinking, tool calls with args, streaming tool output, and results.
+- Shows the main thread and every subagent (foreground and background) as a tree, live: streaming text, thinking, tool calls with args, streaming tool output, results, and compaction (manual or automatic) as it runs.
 - Readable on a phone: edits show as diffs, writes and reads as highlighted files with line numbers, bash output keeps its colors, exit codes and durations sit in the card header, and long output is folded. Code blocks get syntax highlighting and copy buttons. Images show up (screenshots, pasted images). A finished subagent's answer shows inside the parent's card. The **MD/TXT** button switches between rendered markdown and raw text.
 - Tap a file path (in a tool card, or `like/this.ts:42` in a message) to open it in a viewer, scrolled to that line. Only files inside that session's working directory, never `.env`, keys, `.git` or `.ssh`.
-- Control is a separate opt-in (`/web control`, with a confirm prompt): send prompts, steer or queue follow-ups while it's working, and abort.
+- Control is a separate opt-in (`/web control`, with a confirm prompt): send prompts, steer or queue follow-ups while it's working, compact or start a new context, and abort.
 
 ## Install
 
@@ -30,6 +30,7 @@ pi -e ./pi-websession/src/index.ts
 | `/web off` | Stop sharing. Subagents stop within a few seconds |
 | `/web url` | Print the URL again |
 | `/web status` | Hub/connection info |
+| `/web new` | Drop this context and start a fresh session. If the session is shared, the new one is too |
 | `/web rotate` | New access token (restart other sharing pi processes) |
 
 `pi --web` shares from startup.

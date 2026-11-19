@@ -52,6 +52,8 @@ header { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 
 .gone { opacity: .55; }
 .tag { flex: none; font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--fg2); }
 .tag.offline { color: var(--err); border-color: var(--err); }
+.tag.compacting { color: var(--warn); border-color: var(--warn); }
+.btn:disabled { opacity: 0.55; }
 #endnote { display: none; margin: 12px auto 4px; max-width: 900px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 8px; color: var(--fg2); font-size: 13px; text-align: center; }
 #endnote.show { display: block; }
 #endnote.offline { color: var(--err); border-color: var(--err); }
@@ -221,6 +223,8 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
   <div id="composer">
     <textarea id="input" rows="1" placeholder="Message pi…" enterkeyhint="send"></textarea>
     <select id="mode" class="hide" title="While busy"><option value="steer">steer</option><option value="followUp">after</option></select>
+    <button class="btn sec" id="compactBtn" title="Compact this session's context now">compact</button>
+    <button class="btn sec" id="newBtn" title="Drop this context and start a fresh session">new ctx</button>
     <button class="btn danger hide" id="abort" title="Abort">■</button>
     <button class="btn" id="send">Send</button>
   </div>
@@ -449,10 +453,14 @@ function descendants(id, depth = 1, out = []) { for (const c of children(id)) { 
 /** False once a session ended or its publisher went away: nothing in it is still running. */
 const alive = (rec) => rec.meta.status !== "ended" && rec.meta.status !== "offline";
 const STATUS_TAG = { ended: "done", offline: "offline" };
-function statusTag(m) { return STATUS_TAG[m.status] ? `<span class="tag ${m.status}">${STATUS_TAG[m.status]}</span>` : ""; }
+function statusTag(m) {
+  if (m.compacting) return `<span class="tag compacting">compacting${m.compactionReason && m.compactionReason !== "manual" ? " (auto)" : ""}</span>`;
+  return STATUS_TAG[m.status] ? `<span class="tag ${m.status}">${STATUS_TAG[m.status]}</span>` : "";
+}
 function subText(m) {
   const bits = [];
   bits.push({ running: "working", waiting_ui: "waiting on terminal", ended: "done", offline: "offline (disconnected)" }[m.status] || m.status);
+  if (m.compacting) bits.push(m.compactionReason && m.compactionReason !== "manual" ? "compacting (auto)" : "compacting");
   if (m.model) bits.push(m.model.split("/").pop());
   if (m.contextPercent != null) bits.push(`ctx ${m.contextPercent}%`);
   if (m.usage?.cost) bits.push(`$${m.usage.cost.toFixed(2)}`);
@@ -770,6 +778,12 @@ function renderChrome() {
   $("ro").classList.toggle("hide", can || !rec);
   const busy = rec?.meta.status === "running" || rec?.meta.status === "waiting_ui";
   $("abort").classList.toggle("hide", !busy);
+  $("compactBtn").classList.toggle("hide", !can);
+  const compacting = !!rec?.meta.compacting;
+  $("compactBtn").disabled = compacting;
+  $("compactBtn").textContent = compacting ? "compacting…" : "compact";
+  // Subagent sessions shouldn't be replaced out from under their runner, and a busy session can't switch.
+  $("newBtn").classList.toggle("hide", !can || busy || rec?.meta.kind === "subagent");
   $("mode").classList.toggle("hide", !busy);
   $("send").textContent = busy ? "Queue" : "Send";
   if ($("drawer").classList.contains("open")) renderDrawer();
@@ -1043,6 +1057,8 @@ input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing && matchMedia("(pointer: fine)").matches) { e.preventDefault(); send(); }
 });
 $("abort").onclick = () => { if (confirm("Abort the current run?")) control("abort"); };
+$("compactBtn").onclick = () => { if (confirm("Compact the context now?")) control("compact"); };
+$("newBtn").onclick = () => { if (confirm("Drop this context and start a fresh session?")) control("new"); };
 </script>
 </body>
 </html>

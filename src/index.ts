@@ -419,6 +419,14 @@ class Publisher {
         });
         this.notice("info", "Compaction started.");
         return;
+      case "new": {
+        if (this.meta.kind === "subagent") return this.notice("error", "New context is only available for main sessions.");
+        if (!ctx.isIdle()) return this.notice("error", "Wait for the current run to finish (or abort) before starting a new context.");
+        // Command contexts are what carry newSession(); route through our own
+        // /web command to get one. The /web handler does the actual switch.
+        this.pi.sendUserMessage("/web new", { expandPromptTemplates: true } as any);
+        return;
+      }
       case "model": {
         const want = String(cmd.model ?? "");
         const slash = want.indexOf("/");
@@ -613,10 +621,21 @@ export default function websession(pi: ExtensionAPI) {
     touch(ctx);
     pub?.patch({ name: e.name });
   });
+  pi.on("session_before_compact", async (e, ctx) => {
+    touch(ctx);
+    // reason tells manual (/compact or the web button) apart from automatic (threshold or overflow recovery).
+    pub?.patch({ compacting: true, compactionReason: e.reason });
+  });
   pi.on("session_compact", async (_e, ctx) => {
     touch(ctx);
+    pub?.patch({ compacting: false, compactionReason: undefined });
     // History changed shape; resend everything.
     if (pub) processNode().publish(pub.snapshot());
+  });
+  pi.on("session_compact_failed", async (_e, ctx) => {
+    touch(ctx);
+    // Also covers aborts and extensions cancelling in session_before_compact.
+    pub?.patch({ compacting: false, compactionReason: undefined });
   });
   pi.on("session_tree", async (_e, ctx) => {
     touch(ctx);
@@ -624,9 +643,9 @@ export default function websession(pi: ExtensionAPI) {
   });
 
   pi.registerCommand("web", {
-    description: "Share this session over HTTP: /web [on|off|control|nocontrol|url|status|rotate]",
+    description: "Share this session over HTTP: /web [on|off|control|nocontrol|new|url|status|rotate]",
     getArgumentCompletions: (prefix: string) => {
-      const items = ["on", "off", "control", "nocontrol", "url", "status", "rotate"].map((v) => ({ value: v, label: v }));
+      const items = ["on", "off", "control", "nocontrol", "new", "url", "status", "rotate"].map((v) => ({ value: v, label: v }));
       const f = items.filter((i) => i.value.startsWith(prefix.trim()));
       return f.length ? f : null;
     },
@@ -648,7 +667,7 @@ export default function websession(pi: ExtensionAPI) {
         case "control": {
           const ok = await ctx.ui.confirm(
             "Allow web control?",
-            "Anyone with the URL+token can send prompts, steer, abort, and compact this session and its subagents from a browser. Allow?",
+            "Anyone with the URL+token can send prompts, steer, abort, compact, start new contexts in this session and its subagents from a browser. Allow?",
           );
           if (!ok) return say("Web control not enabled.");
           setShare(key, { control: true, enabledAt: existing?.enabledAt ?? new Date().toISOString(), sessionId: ctx.sessionManager.getSessionId() });
@@ -670,6 +689,20 @@ export default function websession(pi: ExtensionAPI) {
           removeShare(key);
           stopPublishing("remove");
           say("Web sharing off for this session. Subagents stop publishing within a few seconds.");
+          return;
+        }
+        case "new": {
+          if (!ctx.isIdle()) return say("Wait for the current run to finish (or abort) before starting a new context.", "warning");
+          say("Starting a new context…");
+          try {
+            // parentSession keeps the share entry reachable: the replacement
+            // session's session_start finds it through the parent chain and
+            // starts publishing with the same control flag.
+            const res = await (ctx as any).newSession({ parentSession: ctx.sessionManager.getSessionFile() });
+            if (res?.cancelled) say("New session was cancelled.");
+          } catch (err: any) {
+            say(`New session failed: ${err?.message ?? err}`, "error");
+          }
           return;
         }
         case "url":
@@ -697,7 +730,7 @@ export default function websession(pi: ExtensionAPI) {
           return;
         }
         default:
-          say("Usage: /web [on|off|control|nocontrol|url|status|rotate]", "warning");
+          say("Usage: /web [on|off|control|nocontrol|new|url|status|rotate]", "warning");
       }
     },
   });
