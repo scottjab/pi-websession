@@ -139,6 +139,7 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 #model { display: none; max-width: 900px; margin: 0 auto 6px; gap: 6px; justify-content: center; }
 #model.show { display: flex; }
 #model select { max-width: 100%; min-width: 0; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--fg2); font: inherit; font-size: 12px; padding: 0 6px; }
+#model .btn { flex: none; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--fg2); font-size: 12px; font-weight: 500; }
 #thinkSel { flex: none; }
 #mode { height: 40px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; padding: 0 4px; }
 .hide { display: none !important; }
@@ -219,12 +220,10 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 <button id="jump">↓ latest</button>
 <footer>
   <div id="ro">view only · run <code>/web control</code> in pi to allow control</div>
-  <div id="model"><select id="modelSel" title="Model for this session"></select><select id="thinkSel" title="Thinking level for this session"></select></div>
+  <div id="model"><select id="modelSel" title="Model for this session"></select><select id="thinkSel" title="Thinking level for this session"></select><button class="btn sec" id="compactBtn" title="Compact this session's context now">compact</button><button class="btn sec" id="newBtn" title="Drop this context and start a fresh session">new ctx</button></div>
   <div id="composer">
     <textarea id="input" rows="1" placeholder="Message pi…" enterkeyhint="send"></textarea>
     <select id="mode" class="hide" title="While busy"><option value="steer">steer</option><option value="followUp">after</option></select>
-    <button class="btn sec" id="compactBtn" title="Compact this session's context now">compact</button>
-    <button class="btn sec" id="newBtn" title="Drop this context and start a fresh session">new ctx</button>
     <button class="btn danger hide" id="abort" title="Abort">■</button>
     <button class="btn" id="send">Send</button>
   </div>
