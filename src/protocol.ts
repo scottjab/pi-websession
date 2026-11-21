@@ -12,6 +12,10 @@ export interface SessionMeta {
   name?: string;
   cwd?: string;
   kind: "main" | "subagent";
+  /** Which agent runs this session. Unset means pi. */
+  agent?: "pi" | "claude";
+  /** Control actions this session supports. Unset means all of them (pi). */
+  actions?: ControlCommand["action"][];
   /** Short label for subagents, e.g. the run id. */
   label?: string;
   /** Current model as "provider/id". */

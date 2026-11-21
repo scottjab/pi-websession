@@ -219,7 +219,7 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 <main id="scroller"><div id="log"><div class="empty">Waiting for sessions…<br><small>Run <code>/web</code> in a pi session.</small></div></div><div id="endnote"></div></main>
 <button id="jump">↓ latest</button>
 <footer>
-  <div id="ro">view only · run <code>/web control</code> in pi to allow control</div>
+  <div id="ro">view only · run <code>/web control</code> in <span id="roAgent">pi</span> to allow control</div>
   <div id="model"><select id="modelSel" title="Model for this session"></select><select id="thinkSel" title="Thinking level for this session"></select><button class="btn sec" id="compactBtn" title="Compact this session's context now">compact</button><button class="btn sec" id="newBtn" title="Drop this context and start a fresh session">new ctx</button></div>
   <div id="composer">
     <textarea id="input" rows="1" placeholder="Message pi…" enterkeyhint="send"></textarea>
@@ -775,14 +775,18 @@ function renderChrome() {
   $("composer").classList.toggle("show", can);
   renderModelPicker(rec, can);
   $("ro").classList.toggle("hide", can || !rec);
+  $("roAgent").textContent = rec?.meta.agent === "claude" ? "Claude Code" : "pi";
+  $("input").placeholder = rec?.meta.agent === "claude" ? "Message Claude…" : "Message pi…";
   const busy = rec?.meta.status === "running" || rec?.meta.status === "waiting_ui";
-  $("abort").classList.toggle("hide", !busy);
-  $("compactBtn").classList.toggle("hide", !can);
+  // Claude Code sessions only take prompts and abort; pi sessions take everything.
+  const has = (a) => !rec?.meta.actions || rec.meta.actions.includes(a);
+  $("abort").classList.toggle("hide", !busy || !has("abort"));
+  $("compactBtn").classList.toggle("hide", !can || !has("compact"));
   const compacting = !!rec?.meta.compacting;
   $("compactBtn").disabled = compacting;
   $("compactBtn").textContent = compacting ? "compacting…" : "compact";
   // Subagent sessions shouldn't be replaced out from under their runner, and a busy session can't switch.
-  $("newBtn").classList.toggle("hide", !can || busy || rec?.meta.kind === "subagent");
+  $("newBtn").classList.toggle("hide", !can || busy || rec?.meta.kind === "subagent" || !has("new"));
   $("mode").classList.toggle("hide", !busy);
   $("send").textContent = busy ? "Queue" : "Send";
   if ($("drawer").classList.contains("open")) renderDrawer();
@@ -857,7 +861,7 @@ function renderDrawer() {
   for (const r of roots) {
     const rows = [[r, 0], ...descendants(r.meta.id)];
     for (const [s, d] of rows) {
-      h += `<button class="srow${d ? " child" : ""}${d > 1 ? " d2" : ""}${s.meta.id === S.sel ? " sel" : ""}${alive(s) ? "" : " gone"}" data-sid="${esc(s.meta.id)}"><span class="dot ${s.meta.status}"></span><span class="t"><div class="n">${esc(title(s))}</div><div class="m">${esc(subText(s.meta))} · ${ago(s.meta.updatedAt)}${d === 0 && s.meta.cwd ? " · " + esc(s.meta.cwd) : ""}</div></span>${statusTag(s.meta)}${s.meta.controllable && alive(s) ? "<span title='controllable'>⌨</span>" : ""}</button>`;
+      h += `<button class="srow${d ? " child" : ""}${d > 1 ? " d2" : ""}${s.meta.id === S.sel ? " sel" : ""}${alive(s) ? "" : " gone"}" data-sid="${esc(s.meta.id)}"><span class="dot ${s.meta.status}"></span><span class="t"><div class="n">${esc(title(s))}</div><div class="m">${esc(subText(s.meta))} · ${ago(s.meta.updatedAt)}${d === 0 && s.meta.cwd ? " · " + esc(s.meta.cwd) : ""}</div></span>${s.meta.agent === "claude" && d === 0 ? '<span class="tag">claude</span>' : ""}${statusTag(s.meta)}${s.meta.controllable && alive(s) ? "<span title='controllable'>⌨</span>" : ""}</button>`;
     }
   }
   p.innerHTML = h;

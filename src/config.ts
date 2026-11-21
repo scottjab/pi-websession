@@ -12,7 +12,7 @@ export const APP_ID = "pi-websession";
  * Identifies this copy of the plugin: a hash of its source files. Differs after any update,
  * whatever the install (nix store path, git checkout, npm), so a hub can tell it's stale.
  */
-export const BUILD: string = (() => {
+export function computeBuild(): string {
   try {
     const h = createHash("sha256");
     const walk = (dir: string, rel: string) => {
@@ -27,7 +27,9 @@ export const BUILD: string = (() => {
   } catch {
     return "unknown";
   }
-})();
+}
+
+export const BUILD: string = computeBuild();
 
 /** When this process started. On a hub handoff the newer process wins. */
 export const PROCESS_STARTED = Math.round(Date.now() - process.uptime() * 1000);
@@ -325,6 +327,16 @@ export function findSharedRoot(sessionFile: string | undefined, parentSession: s
     cur = readSessionHeader(cur)?.parentSession;
   }
   return undefined;
+}
+
+/** The URLs to open: tailnet name (or IP) first, then LAN addresses. */
+export async function shareUrl(): Promise<string> {
+  const b = bindHosts();
+  const dns = b.publicHost ? await tailscaleDnsName() : undefined;
+  const host = dns ?? b.publicHost ?? b.lanHosts[0] ?? "127.0.0.1";
+  const t = token();
+  const lan = b.lanHosts.filter((h) => h !== host).map((h) => `http://${h}:${port()}/?t=${t}`);
+  return [`http://${host}:${port()}/?t=${t}`, ...lan.map((u) => `${u} (LAN)`)].join("\n");
 }
 
 /** Opt-in debug log: PI_WEBSESSION_DEBUG=1 writes to <dataDir>/debug.log */

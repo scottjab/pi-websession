@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { agentDir, bindHosts, debug, findSharedRoot, port, readSessionHeader, readShares, removeShare, rotateToken, setShare, tailscaleDnsName, token } from "./config.ts";
+import { agentDir, bindHosts, debug, findSharedRoot, port, readShares, removeShare, rotateToken, setShare, shareUrl } from "./config.ts";
 import { processNode } from "./node.ts";
 import type { ControlCommand, SessionEvent, SessionMeta, ToolState, WireMessage } from "./protocol.ts";
 import { codeCalls, partialToolText, toWire } from "./serialize.ts";
@@ -40,14 +40,6 @@ function subagentLabel(file: string): string {
   return `${runId.slice(0, 8)}${n !== "0" ? `#${n}` : ""}`;
 }
 
-async function shareUrl(): Promise<string> {
-  const b = bindHosts();
-  const dns = b.publicHost ? await tailscaleDnsName() : undefined;
-  const host = dns ?? b.publicHost ?? b.lanHosts[0] ?? "127.0.0.1";
-  const t = token();
-  const lan = b.lanHosts.filter((h) => h !== host).map((h) => `http://${h}:${port()}/?t=${t}`);
-  return [`http://${host}:${port()}/?t=${t}`, ...lan.map((u) => `${u} (LAN)`)].join("\n");
-}
 
 // ---------------------------------------------------------------------------
 // pi-subagents integration: make foreground children (which don't load ambient

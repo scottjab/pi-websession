@@ -1,6 +1,6 @@
 # pi-websession
 
-Watch a running pi session, and its subagents, live from your phone or a browser over Tailscale or your local network. You can also drive it from there if you say so.
+Watch a running pi or Claude Code session, and its subagents, live from your phone or a browser over Tailscale or your local network. You can also drive it from there if you say so.
 
 - Opt in per session with `/web`. Nothing is shared until you do.
 - Shows the main thread and every subagent (foreground and background) as a tree, live: streaming text, thinking, tool calls with args, streaming tool output, results, and compaction (manual or automatic) as it runs.
@@ -39,6 +39,30 @@ The URL looks like `http://<host>.<tailnet>.ts.net:7878/?t=<token>`, plus a LAN 
 
 The opt-in is remembered per session file, so a resumed session comes back shared, and background subagents keep showing up after you close the terminal. `/web off` clears it.
 
+## Claude Code
+
+The same web UI works for Claude Code sessions, through a Claude Code plugin in this repo (hooks plus a `/web` command). pi and Claude Code sessions show up side by side on the same hub.
+
+```sh
+claude plugin marketplace add scottjab/pi-websession
+claude plugin install pi-websession@pi-websession
+```
+
+Or try it from a checkout for one session: `claude --plugin-dir ./pi-websession`. Needs Node 22.18+ on your PATH (the hooks run the TypeScript source directly).
+
+In a Claude Code session, `/web`, `/web control`, `/web nocontrol`, `/web off`, `/web url`, `/web status` and `/web rotate` work like they do in pi. The result shows right in the terminal. Claude then replies with a one-liner, since the command goes through as a normal turn (that turn ending is what starts listening for web prompts).
+
+What you get:
+
+- The main thread and every subagent (foreground and background), live as Claude Code writes its transcript: text, tool calls with args, results, edits as diffs, images, compaction. Text shows up a block at a time, not token by token, and thinking is hidden (Claude Code only stores it redacted).
+- **Prompt while idle.** The session wakes up and takes it as your next prompt. This uses an `asyncRewake` Stop hook that waits in the background after each turn.
+- **Prompt while working.** "steer" lands next to the result of the current tool call. "after" waits for the turn to end. A prompt you type in the terminal also picks up anything queued from the web.
+- **Prompt a subagent.** It goes to the main thread, which passes it on with `SendMessage`. Subagents ignore text that shows up next to a tool result, so a direct injection doesn't work (and shouldn't). If the main thread is waiting on that subagent in the foreground, the message only gets there once the subagent returns.
+- **Stop.** The next tool call is denied and Claude is told to wrap up. A long reply with no tool calls runs to the end, and there's no hard interrupt.
+- No model or thinking picker, and no compact or new ctx buttons. Hooks can't do those.
+
+Sharing survives `claude --resume` and `/clear`. Each shared session gets a small bridge process (`src/claude/bridge.ts`) that tails the transcript and publishes to the hub. It exits with the session, and restarts itself when the plugin's code changes. State lives in `<PI_WEBSESSION_DIR>/claude/<session id>/`. The hooks run on every Claude Code session, but for a session that isn't shared they just check that directory and exit (about 60 ms).
+
 ## How it works
 
 - **Hub.** The first sharing pi process on the machine binds port 7878 on 127.0.0.1, your Tailscale IP, and your LAN IPs (wifi/ethernet, not docker/VM bridges), and serves the web UI. Other sharing pi processes, like background subagent runners or another terminal, connect to it on loopback. If the hub's pi exits, another one takes over and everything resyncs. The browser reconnects on its own.
@@ -69,7 +93,7 @@ The opt-in is remembered per session file, so a resumed session comes back share
 - It's plain HTTP. On the tailnet that's encrypted by WireGuard, but on the LAN the token and transcript go over the wire in clear. Use `PI_WEBSESSION_HOST=tailscale` if you don't trust the network.
 - LAN/Tailscale addresses are picked when the hub starts. If you switch networks, the next hub (or `/web off` + `/web` in the hub pi) picks up the new ones.
 - On NixOS the firewall usually trusts `tailscale0` but not your wifi/ethernet, so open the port for LAN: `networking.firewall.allowedTCPPorts = [ 7878 ];`.
-- Dialogs pi shows in the terminal (confirm/select from extensions) can't be answered from the web. The session shows "waiting on terminal".
+- Dialogs pi shows in the terminal (confirm/select from extensions) can't be answered from the web. The session shows "waiting on terminal". Same for Claude Code permission prompts.
 - No QR code. Type the short URL once and bookmark it.
 - If the hub process exits, the new hub only knows about live sessions. Ended subagents from the old hub drop off.
 

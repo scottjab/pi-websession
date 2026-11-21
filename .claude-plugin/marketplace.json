@@ -1,0 +1,14 @@
+{
+  "name": "pi-websession",
+  "description": "pi-websession: live web view and remote control for Claude Code sessions",
+  "owner": {
+    "name": "scottjab"
+  },
+  "plugins": [
+    {
+      "name": "pi-websession",
+      "source": "./",
+      "description": "Live web view and remote control for Claude Code sessions and subagents"
+    }
+  ]
+}

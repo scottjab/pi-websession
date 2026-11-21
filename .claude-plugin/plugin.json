@@ -1,0 +1,9 @@
+{
+  "name": "pi-websession",
+  "description": "Watch (and optionally drive) Claude Code sessions and their subagents from a browser over Tailscale or your LAN",
+  "repository": "https://github.com/scottjab/pi-websession",
+  "license": "MIT",
+  "author": {
+    "name": "James Scott"
+  }
+}
