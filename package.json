@@ -1,6 +1,6 @@
 {
   "name": "pi-websession",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Watch (and optionally drive) running pi sessions and their subagents from a browser over Tailscale or your LAN",
   "type": "module",
   "license": "MIT",
