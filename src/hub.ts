@@ -481,7 +481,7 @@ export class Hub {
       const rec = this.sessions.get(cmd.sessionId);
       if (!rec) return json(res, 404, { error: "unknown session" });
       if (!rec.meta.controllable) return json(res, 403, { error: "control not enabled for this session (run /web control in the session)" });
-      if (!["prompt", "abort", "compact", "new", "model", "thinking"].includes(cmd.action)) return json(res, 400, { error: "bad action" });
+      if (!["prompt", "abort", "compact", "new", "model", "thinking", "answer"].includes(cmd.action)) return json(res, 400, { error: "bad action" });
       const owner = this.owners.get(rec.ownerId);
       if (!owner) return json(res, 503, { error: "session is offline" });
       owner.send({ type: "command", command: { ...cmd, cmdId: String(cmd.cmdId ?? Date.now()) } });

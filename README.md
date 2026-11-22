@@ -58,6 +58,7 @@ What you get:
 - **Prompt while idle.** The session wakes up and takes it as your next prompt. This uses an `asyncRewake` Stop hook that waits in the background after each turn.
 - **Prompt while working.** "steer" lands next to the result of the current tool call. "after" waits for the turn to end. A prompt you type in the terminal also picks up anything queued from the web.
 - **Prompt a subagent.** It goes to the main thread, which passes it on with `SendMessage`. Subagents ignore text that shows up next to a tool result, so a direct injection doesn't work (and shouldn't). If the main thread is waiting on that subagent in the foreground, the message only gets there once the subagent returns.
+- **Answer questions.** When Claude asks you something (AskUserQuestion), the web shows the options as buttons, plus a box to type your own answer. A lone single-choice question sends on tap, and a lone question can also be answered from the message box. The terminal dialog stays up too, and whichever answers first wins. This uses a `PermissionRequest` hook that waits for a web answer while the dialog is open.
 - **Stop.** The next tool call is denied and Claude is told to wrap up. A long reply with no tool calls runs to the end, and there's no hard interrupt.
 - No model or thinking picker, and no compact or new ctx buttons. Hooks can't do those.
 
@@ -93,7 +94,7 @@ Sharing survives `claude --resume` and `/clear`. Each shared session gets a smal
 - It's plain HTTP. On the tailnet that's encrypted by WireGuard, but on the LAN the token and transcript go over the wire in clear. Use `PI_WEBSESSION_HOST=tailscale` if you don't trust the network.
 - LAN/Tailscale addresses are picked when the hub starts. If you switch networks, the next hub (or `/web off` + `/web` in the hub pi) picks up the new ones.
 - On NixOS the firewall usually trusts `tailscale0` but not your wifi/ethernet, so open the port for LAN: `networking.firewall.allowedTCPPorts = [ 7878 ];`.
-- Dialogs pi shows in the terminal (confirm/select from extensions) can't be answered from the web. The session shows "waiting on terminal". Same for Claude Code permission prompts.
+- Dialogs pi shows in the terminal (confirm/select from extensions) can't be answered from the web, since pi doesn't tell extensions the options or let them answer. The session shows "waiting on terminal". Same for Claude Code permission prompts. Claude Code's questions (AskUserQuestion) can be answered from the web.
 - No QR code. Type the short URL once and bookmark it.
 - If the hub process exits, the new hub only knows about live sessions. Ended subagents from the old hub drop off.
 

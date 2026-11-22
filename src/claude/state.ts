@@ -5,11 +5,13 @@
 //   events     hook -> bridge, one JSON object per line
 //   bridge.pid the bridge process publishing this session
 //   waiter     token of the newest idle waiter (the asyncRewake Stop hook)
+//   question-<agent>.json  the AskUserQuestion a PermissionRequest hook is waiting on
 
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { dataDir } from "../config.ts";
+import type { AskQuestion, AskState } from "../protocol.ts";
 
 export function claudeRoot(): string {
   return join(dataDir(), "claude");
@@ -40,6 +42,8 @@ export type HookEvent =
   | { t: "compact"; on: boolean; reason?: "manual" | "auto" }
   | { t: "subagent"; agentId: string; agentType?: string; done: boolean; path?: string }
   | { t: "aborted"; agentId?: string }
+  | { t: "ask"; id: string; questions: AskQuestion[]; agentId?: string }
+  | { t: "ask_done"; id: string; agentId?: string }
   | { t: "end"; reason?: string };
 
 export function pushEvent(sid: string, ev: HookEvent): void {
@@ -51,7 +55,7 @@ export function pushEvent(sid: string, ev: HookEvent): void {
 // --- bridge -> hook commands ---
 
 export interface InboxItem {
-  kind: "prompt" | "abort";
+  kind: "prompt" | "abort" | "answer";
   text?: string;
   /** steer: next tool boundary. followUp: when the turn ends. */
   mode?: "steer" | "followUp";
@@ -59,6 +63,9 @@ export interface InboxItem {
   agentId?: string;
   /** A message for a subagent, delivered to the main thread to pass on with SendMessage. */
   relay?: { agentId: string; name?: string };
+  /** For "answer": which question, and question text -> answer. */
+  qid?: string;
+  answers?: Record<string, string>;
   at: number;
 }
 
@@ -104,6 +111,30 @@ export function claim(sid: string, want: (it: InboxItem) => boolean): InboxItem[
     out.push(it);
   }
   return out;
+}
+
+// --- the open AskUserQuestion, per thread ---
+
+export function questionFile(sid: string, agentId?: string): string {
+  const who = agentId && /^[A-Za-z0-9_-]{1,80}$/.test(agentId) ? agentId : "main";
+  return join(sessionDir(sid), `question-${who}.json`);
+}
+
+export function readQuestion(sid: string, agentId?: string): AskState | undefined {
+  try {
+    const q = JSON.parse(readFileSync(questionFile(sid, agentId), "utf8"));
+    return typeof q?.id === "string" && Array.isArray(q.questions) ? q : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Drop the open question (answered in the terminal, cancelled, or the turn moved on). Its waiting hook sees and quits. */
+export function clearQuestion(sid: string, agentId?: string, id?: string): void {
+  try {
+    if (id && readQuestion(sid, agentId)?.id !== id) return;
+    unlinkSync(questionFile(sid, agentId));
+  } catch {}
 }
 
 export function clearInbox(sid: string): void {

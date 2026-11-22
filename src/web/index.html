@@ -136,6 +136,20 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 .btn { border: 0; border-radius: 10px; padding: 0 14px; height: 40px; background: var(--accent); color: var(--accent-fg); font-weight: 600; }
 .btn.sec { background: var(--bg3); color: var(--fg); }
 .btn.danger { background: var(--err); color: #fff; }
+#ask { display: none; max-width: 900px; margin: 0 auto 8px; border: 1px solid var(--warn); border-radius: 10px; background: var(--bg); padding: 10px 12px; max-height: 50vh; overflow-y: auto; }
+#ask.show { display: block; }
+#ask .aq + .aq { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+#ask .ah { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--warn); }
+#ask .at { margin: 2px 0 8px; font-weight: 600; }
+#ask .ao { display: flex; flex-wrap: wrap; gap: 6px; }
+#ask .opt { text-align: left; border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); color: var(--fg); padding: 6px 10px; font: inherit; font-size: 14px; max-width: 100%; cursor: pointer; }
+#ask .opt small { display: block; color: var(--fg2); font-size: 12px; }
+#ask .opt.on { border-color: var(--accent); background: var(--user); }
+#ask .opt:disabled { opacity: 0.55; cursor: default; }
+#ask input { width: 100%; box-sizing: border-box; margin-top: 6px; height: 34px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; font-size: 14px; padding: 0 10px; }
+#ask .af { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 10px; }
+#ask .af .hint { flex: 1; color: var(--fg3); font-size: 12px; }
+#ask .af .btn { height: 34px; }
 #model { display: none; max-width: 900px; margin: 0 auto 6px; gap: 6px; justify-content: center; }
 #model.show { display: flex; }
 #model select { max-width: 100%; min-width: 0; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--fg2); font: inherit; font-size: 12px; padding: 0 6px; }
@@ -220,6 +234,7 @@ footer { flex: none; border-top: 1px solid var(--border); background: var(--bg2)
 <button id="jump">↓ latest</button>
 <footer>
   <div id="ro">view only · run <code>/web control</code> in <span id="roAgent">pi</span> to allow control</div>
+  <div id="ask"></div>
   <div id="model"><select id="modelSel" title="Model for this session"></select><select id="thinkSel" title="Thinking level for this session"></select><button class="btn sec" id="compactBtn" title="Compact this session's context now">compact</button><button class="btn sec" id="newBtn" title="Drop this context and start a fresh session">new ctx</button></div>
   <div id="composer">
     <textarea id="input" rows="1" placeholder="Message pi…" enterkeyhint="send"></textarea>
@@ -431,6 +446,7 @@ function argSummary(name, a) {
     if (Array.isArray(a.chain)) return a.chain.map((t) => t.agent).join(" → ");
     if (a.action) return a.action;
   }
+  if (Array.isArray(a.questions)) return a.questions.map((q) => q?.question ?? "").join(" · ");
   if (a.url) return a.url;
   if (a.query) return a.query;
   try { return short(JSON.stringify(a), 160); } catch { return ""; }
@@ -458,7 +474,7 @@ function statusTag(m) {
 }
 function subText(m) {
   const bits = [];
-  bits.push({ running: "working", waiting_ui: "waiting on terminal", ended: "done", offline: "offline (disconnected)" }[m.status] || m.status);
+  bits.push(m.ask ? "waiting on an answer" : { running: "working", waiting_ui: "waiting on terminal", ended: "done", offline: "offline (disconnected)" }[m.status] || m.status);
   if (m.compacting) bits.push(m.compactionReason && m.compactionReason !== "manual" ? "compacting (auto)" : "compacting");
   if (m.model) bits.push(m.model.split("/").pop());
   if (m.contextPercent != null) bits.push(`ctx ${m.contextPercent}%`);
@@ -774,9 +790,9 @@ function renderChrome() {
   const can = !!rec?.meta.controllable && rec.meta.status !== "offline" && rec.meta.status !== "ended";
   $("composer").classList.toggle("show", can);
   renderModelPicker(rec, can);
+  renderAsk(rec, can);
   $("ro").classList.toggle("hide", can || !rec);
   $("roAgent").textContent = rec?.meta.agent === "claude" ? "Claude Code" : "pi";
-  $("input").placeholder = rec?.meta.agent === "claude" ? "Message Claude…" : "Message pi…";
   const busy = rec?.meta.status === "running" || rec?.meta.status === "waiting_ui";
   // Claude Code sessions only take prompts and abort; pi sessions take everything.
   const has = (a) => !rec?.meta.actions || rec.meta.actions.includes(a);
@@ -790,6 +806,78 @@ function renderChrome() {
   $("mode").classList.toggle("hide", !busy);
   $("send").textContent = busy ? "Queue" : "Send";
   if ($("drawer").classList.contains("open")) renderDrawer();
+}
+
+/**
+ * The question the agent is waiting on (Claude Code's AskUserQuestion): option
+ * buttons, or your own words. One single-choice question sends on click; the
+ * composer's text answers a lone question too. Rebuilt only when the question
+ * changes, so picks and typing survive live updates.
+ */
+const askDraft = { id: null, picks: [], text: [] };
+function askAnswers(ask) {
+  const out = {};
+  ask.questions.forEach((q, i) => {
+    const t = (askDraft.text[i] || "").trim();
+    const p = [...(askDraft.picks[i] || [])];
+    if (t) out[q.question] = q.multiSelect && p.length ? [...p, t].join(", ") : t;
+    else if (p.length) out[q.question] = p.join(", ");
+  });
+  return out;
+}
+async function sendAnswers(ask, answers) {
+  const box = $("ask");
+  box.querySelectorAll("button, input").forEach((b) => (b.disabled = true));
+  if (!(await control("answer", { qid: ask.id, answers }))) box.querySelectorAll("button, input").forEach((b) => (b.disabled = false));
+}
+function renderAsk(rec, can) {
+  const box = $("ask");
+  const ask = can ? rec?.meta.ask : null;
+  box.classList.toggle("show", !!ask);
+  $("input").placeholder = ask && ask.questions.length === 1 ? "Type an answer, or pick an option above…" : rec?.meta.agent === "claude" ? "Message Claude…" : "Message pi…";
+  if (!ask) { box.replaceChildren(); askDraft.id = null; return; }
+  if (askDraft.id === ask.id && box.childElementCount) return;
+  askDraft.id = ask.id;
+  askDraft.picks = ask.questions.map(() => new Set());
+  askDraft.text = ask.questions.map(() => "");
+  const instant = ask.questions.length === 1 && !ask.questions[0].multiSelect;
+  const submit = el("button", "btn", "Answer");
+  const refresh = () => { submit.disabled = Object.keys(askAnswers(ask)).length < ask.questions.length; };
+  box.replaceChildren();
+  ask.questions.forEach((q, i) => {
+    const wrap = el("div", "aq");
+    if (q.header) wrap.appendChild(el("div", "ah", esc(q.header)));
+    wrap.appendChild(el("div", "at", esc(q.question)));
+    const opts = el("div", "ao");
+    for (const o of q.options) {
+      const b = el("button", "opt", esc(o.label) + (o.description && o.description !== o.label ? `<small>${esc(o.description)}</small>` : ""));
+      b.onclick = () => {
+        if (instant) return sendAnswers(ask, { [q.question]: o.label });
+        const set = askDraft.picks[i];
+        if (q.multiSelect) set.has(o.label) ? set.delete(o.label) : set.add(o.label);
+        else { const had = set.has(o.label); set.clear(); if (!had) set.add(o.label); }
+        opts.querySelectorAll(".opt").forEach((x, j) => x.classList.toggle("on", set.has(q.options[j].label)));
+        refresh();
+      };
+      opts.appendChild(b);
+    }
+    wrap.appendChild(opts);
+    const inp = el("input");
+    inp.placeholder = q.multiSelect ? "Add something else (optional)…" : "Or type your own answer…";
+    inp.enterKeyHint = "send";
+    inp.oninput = () => { askDraft.text[i] = inp.value; refresh(); };
+    inp.onkeydown = (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      if (Object.keys(askAnswers(ask)).length === ask.questions.length) sendAnswers(ask, askAnswers(ask));
+    };
+    wrap.appendChild(inp);
+    box.appendChild(wrap);
+  });
+  const foot = el("div", "af", `<span class="hint">${instant ? "Tap an option, or type an answer." : "Answers go back to Claude. The terminal can still answer too."}</span>`);
+  submit.onclick = () => sendAnswers(ask, askAnswers(ask));
+  if (!instant) { foot.appendChild(submit); refresh(); }
+  box.appendChild(foot);
 }
 
 /** Model + thinking level pickers. */
@@ -1052,6 +1140,11 @@ input.addEventListener("input", grow);
 async function send() {
   const text = input.value.trim();
   if (!text) return;
+  const ask = S.sessions.get(S.sel)?.meta.ask;
+  if (ask && ask.questions.length === 1 && S.sessions.get(S.sel)?.meta.controllable) {
+    if (await control("answer", { qid: ask.id, answers: { [ask.questions[0].question]: text } })) { input.value = ""; grow(); }
+    return;
+  }
   if (await control("prompt", { text, mode: $("mode").value })) { input.value = ""; grow(); stick = true; toBottom(); }
 }
 $("send").onclick = send;

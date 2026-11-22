@@ -12,7 +12,7 @@ import { BUILD, computeBuild, debug, readShares } from "../config.ts";
 import { processNode } from "../node.ts";
 import type { ControlCommand, SessionEvent, SessionMeta, WireMessage } from "../protocol.ts";
 import { toWire } from "../serialize.ts";
-import { claudeShareKey, enqueue, pidAlive, readPid, sessionDir, type HookEvent } from "./state.ts";
+import { claudeShareKey, enqueue, pidAlive, readPid, readQuestion, sessionDir, type HookEvent } from "./state.ts";
 import { TranscriptReader } from "./transcript.ts";
 
 const POLL_MS = 250;
@@ -25,7 +25,7 @@ const PARTIAL_THROTTLE_MS = 150;
 const MAX_MESSAGES = 4000;
 /** Subagents that finished longer ago than this aren't listed when the bridge starts. */
 const SUBAGENT_RECENT_MS = 30 * 60 * 1000;
-const ACTIONS: ControlCommand["action"][] = ["prompt", "abort"];
+const ACTIONS: ControlCommand["action"][] = ["prompt", "abort", "answer"];
 
 const sid = process.argv[2] ?? "";
 let mainThread: Thread | undefined;
@@ -274,6 +274,18 @@ function onCommand(t: Thread, cmd: ControlCommand): void {
       enqueue(sid, { kind: "prompt", text, mode, at: Date.now() });
       return notice(t.id, "info", mode === "steer" ? "Steering message queued. Claude sees it after the current tool call." : "Follow-up queued for when this turn ends.");
     }
+    case "answer": {
+      const ask = t.meta.ask;
+      if (!ask || ask.id !== cmd.qid) return notice(t.id, "info", "That question was already answered.");
+      const answers: Record<string, string> = {};
+      for (const q of ask.questions) {
+        const a = cmd.answers?.[q.question];
+        if (typeof a === "string" && a.trim()) answers[q.question] = a.trim();
+      }
+      if (Object.keys(answers).length < ask.questions.length) return notice(t.id, "error", "Answer every question first.");
+      enqueue(sid, { kind: "answer", qid: ask.id, answers, agentId: t.agentId, at: Date.now() });
+      return;
+    }
     case "abort":
       if (!busy) return notice(t.id, "info", "Already idle.");
       enqueue(sid, { kind: "abort", agentId: t.agentId, at: Date.now() });
@@ -295,11 +307,21 @@ function readInfo(): { transcript?: string; cwd?: string; claudePid?: number } {
   }
 }
 
+const agentMetaFile = (file: string) => file.replace(/\.jsonl$/, ".meta.json");
+
 function readAgentMeta(file: string): any {
   try {
-    return JSON.parse(readFileSync(file.replace(/\.jsonl$/, ".meta.json"), "utf8"));
+    return JSON.parse(readFileSync(agentMetaFile(file), "utf8"));
   } catch {
     return {};
+  }
+}
+
+function agentMetaMtime(file: string): number {
+  try {
+    return statSync(agentMetaFile(file)).mtimeMs;
+  } catch {
+    return 0;
   }
 }
 
@@ -322,6 +344,9 @@ async function main(): Promise<void> {
   const transcript = info.transcript;
   const main = new Thread(transcript, undefined, { cwd: info.cwd, pid: info.claudePid ?? process.pid, name: undefined });
   main.load();
+  // A question that was already open when this bridge started (restart or update).
+  const openAsk = readQuestion(sid);
+  if (openAsk) Object.assign(main.meta, { ask: openAsk, status: "waiting_ui" });
   main.register();
   mainThread = main;
 
@@ -329,6 +354,20 @@ async function main(): Promise<void> {
   const subs = new Map<string, Thread>();
   /** agentId -> when it finished. */
   const finished = new Map<string, number>();
+  /** agentId -> meta.json mtime when it was picked up again; only a newer write can finish it. */
+  const resumedAt = new Map<string, number>();
+
+  // SubagentStop doesn't fire for most real subagents, so meta.json's `finished`
+  // (written when the agent ends) is what says it's done.
+  const checkFinished = (id: string, t: Thread) => {
+    if (t.meta.status === "ended") return;
+    const mtime = agentMetaMtime(t.file);
+    if (!mtime || mtime <= (resumedAt.get(id) ?? 0)) return;
+    if (!readAgentMeta(t.file).finished) return;
+    t.poll();
+    finished.set(id, Date.now());
+    t.end();
+  };
 
   const scanSubagents = (initial: boolean) => {
     let names: string[];
@@ -376,12 +415,22 @@ async function main(): Promise<void> {
     switch (ev.t) {
       case "status": {
         const t = thread(ev.agentId);
-        if (t && t.meta.status !== "ended" && t.meta.status !== ev.s) t.patch({ status: ev.s });
+        if (t && t.meta.status !== "ended" && t.meta.status !== ev.s) t.patch({ status: ev.s, ...(ev.s === "idle" && t.meta.ask ? { ask: null } : {}) });
         return;
       }
       case "delivered": {
         const t = thread(ev.agentId);
         t?.delivered(ev.text);
+        return;
+      }
+      case "ask": {
+        const t = thread(ev.agentId);
+        if (t && t.meta.status !== "ended") t.patch({ ask: { id: ev.id, questions: ev.questions }, status: "waiting_ui" });
+        return;
+      }
+      case "ask_done": {
+        const t = thread(ev.agentId);
+        if (t?.meta.ask?.id === ev.id) t.patch({ ask: null, ...(t.meta.status === "waiting_ui" ? { status: "running" as const } : {}) });
         return;
       }
       case "aborted":
@@ -424,6 +473,7 @@ async function main(): Promise<void> {
       if (t.poll() && finished.has(id) && Date.now() - finished.get(id)! > RESUME_GRACE_MS) {
         // A finished background agent picked up again (e.g. a message sent to it).
         finished.delete(id);
+        resumedAt.set(id, agentMetaMtime(t.file));
         t.resume();
       }
     }
@@ -445,6 +495,7 @@ async function main(): Promise<void> {
       lastScan = Date.now();
       scanSubagents(false);
     }
+    for (const [id, t] of subs) if (t) checkFinished(id, t);
     const shared = !!readShares()[claudeShareKey(sid)];
     if (!shared || !existsSync(dir)) {
       debug("claude bridge: share removed", sid);

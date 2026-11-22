@@ -40,6 +40,20 @@ export interface SessionMeta {
   compacting?: boolean;
   /** What triggered the compaction: manual /compact, the context threshold, or overflow recovery. */
   compactionReason?: "manual" | "threshold" | "overflow";
+  /** A question the agent is waiting on (Claude Code's AskUserQuestion). null once it's answered. */
+  ask?: AskState | null;
+}
+
+export interface AskQuestion {
+  question: string;
+  header?: string;
+  options: Array<{ label: string; description?: string }>;
+  multiSelect?: boolean;
+}
+
+export interface AskState {
+  id: string;
+  questions: AskQuestion[];
 }
 
 /** A message as shown in the UI (pi AgentMessage, trimmed for transport). */
@@ -84,7 +98,7 @@ export type SessionEvent =
 export interface ControlCommand {
   cmdId: string;
   sessionId: string;
-  action: "prompt" | "abort" | "compact" | "new" | "model" | "thinking";
+  action: "prompt" | "abort" | "compact" | "new" | "model" | "thinking" | "answer";
   text?: string;
   /** For "model": "provider/id". */
   model?: string;
@@ -92,6 +106,9 @@ export interface ControlCommand {
   level?: string;
   /** How to deliver a prompt while the agent is busy. */
   mode?: "steer" | "followUp";
+  /** For "answer": the AskState id, and question text -> answer (option labels, or the user's own words). */
+  qid?: string;
+  answers?: Record<string, string>;
 }
 
 /** Hub -> browser initial state. */

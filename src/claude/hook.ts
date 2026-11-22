@@ -11,7 +11,24 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { bindHosts, readShares, removeShare, rotateToken, setShare, shareUrl } from "../config.ts";
-import { bridgeAlive, claim, claimRootCarry, claudeShareKey, clearInbox, ensureSessionDir, findClaudePid, pushEvent, sessionDir, sessionShared, writeCarry, type InboxItem } from "./state.ts";
+import {
+  bridgeAlive,
+  claim,
+  claimRootCarry,
+  claudeShareKey,
+  clearInbox,
+  clearQuestion,
+  ensureSessionDir,
+  findClaudePid,
+  pushEvent,
+  questionFile,
+  readQuestion,
+  sessionDir,
+  sessionShared,
+  writeCarry,
+  type InboxItem,
+} from "./state.ts";
+import type { AskQuestion } from "../protocol.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** Stop the idle waiter a little before the timeout in hooks.json (86400s) kills it. */
@@ -198,6 +215,51 @@ async function waitForPrompt(sid: string): Promise<number> {
   return 0;
 }
 
+/**
+ * PermissionRequest for AskUserQuestion. The terminal dialog shows while this
+ * runs, so it races the local user: a web answer comes back as allow +
+ * updatedInput.answers; an answer in the terminal clears the question file
+ * (PostToolUse) and this quits without output. Claude Code ignores a hook
+ * that's still running once the dialog is answered.
+ */
+async function waitForAnswer(sid: string, agentId: string | undefined, toolInput: any): Promise<number> {
+  const questions: AskQuestion[] = (Array.isArray(toolInput?.questions) ? toolInput.questions : [])
+    .filter((q: any) => q && typeof q.question === "string")
+    .map((q: any) => ({
+      question: q.question,
+      header: typeof q.header === "string" ? q.header : undefined,
+      options: (Array.isArray(q.options) ? q.options : []).filter((o: any) => typeof o?.label === "string").map((o: any) => ({ label: o.label, description: typeof o.description === "string" ? o.description : undefined })),
+      multiSelect: !!q.multiSelect,
+    }));
+  if (!questions.length) return 0;
+  const id = randomBytes(6).toString("hex");
+  const file = questionFile(sid, agentId);
+  writeFileSync(file, JSON.stringify({ id, questions }), { mode: 0o600 });
+  pushEvent(sid, { t: "ask", id, questions, agentId });
+  const until = Date.now() + WAIT_MAX_MS;
+  try {
+    while (Date.now() < until) {
+      await new Promise((r) => setTimeout(r, WAIT_POLL_MS));
+      if (readQuestion(sid, agentId)?.id !== id) return 0; // answered in the terminal, or a newer question
+      if (!controlOn(sid)) continue;
+      if (takeAbort(sid, agentId)) {
+        out({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: STOP_NOTE } } });
+        return 0;
+      }
+      const got = claim(sid, (it) => it.kind === "answer" && it.qid === id && forAgent(agentId)(it));
+      const answers = got.at(-1)?.answers;
+      if (!answers || typeof answers !== "object") continue;
+      out({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow", updatedInput: { ...toolInput, answers } } } });
+      return 0;
+    }
+    return 0;
+  } finally {
+    clearQuestion(sid, agentId, id);
+    claim(sid, (it) => it.kind === "answer" && it.qid === id); // late duplicates
+    pushEvent(sid, { t: "ask_done", id, agentId });
+  }
+}
+
 function retireWaiter(sid: string): void {
   try {
     writeFileSync(join(sessionDir(sid), "waiter"), "busy", { mode: 0o600 });
@@ -272,6 +334,7 @@ async function main(): Promise<number> {
   switch (event) {
     case "UserPromptSubmit": {
       retireWaiter(sid);
+      clearQuestion(sid);
       pushEvent(sid, { t: "status", s: "running" });
       if (!bridgeAlive(sid) && readShares()[claudeShareKey(sid)]) startBridge(sid);
       // Web prompts that were waiting for the session to stop ride along with this one.
@@ -290,8 +353,12 @@ async function main(): Promise<number> {
         out({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: STOP_NOTE } });
       }
       return 0;
+    case "PermissionRequest":
+      if (input.tool_name !== "AskUserQuestion") return 0;
+      return await waitForAnswer(sid, agentId, input.tool_input);
     case "PostToolUse":
     case "PostToolUseFailure": {
+      if (input.tool_name === "AskUserQuestion") clearQuestion(sid, agentId);
       if (takeAbort(sid, agentId)) {
         out({ hookSpecificOutput: { hookEventName: event, additionalContext: STOP_NOTE } });
         return 0;
@@ -307,6 +374,8 @@ async function main(): Promise<number> {
       return 0;
     }
     case "Stop":
+      if (agentId) return 0; // a subagent's turn ending isn't the session going idle
+      clearQuestion(sid);
       pushEvent(sid, { t: "status", s: "idle" });
       return await waitForPrompt(sid);
     case "SubagentStart":
@@ -323,6 +392,7 @@ async function main(): Promise<number> {
       return 0;
     case "SessionEnd": {
       retireWaiter(sid);
+      clearQuestion(sid);
       pushEvent(sid, { t: "end", reason: input.reason });
       const entry = readShares()[claudeShareKey(sid)];
       const claudePid = findClaudePid();

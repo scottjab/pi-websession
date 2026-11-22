@@ -41,6 +41,18 @@
         ]
       }
     ],
+    "PermissionRequest": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/src/claude/hook.ts\" PermissionRequest",
+            "timeout": 86400
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "*",
